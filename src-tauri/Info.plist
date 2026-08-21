@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Required for the composer's voice input: without this usage string macOS
+	     refuses the WKWebview's getUserMedia() and it rejects silently. Tauri
+	     merges this file into the generated Info.plist (dev + bundle). -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Spike uses your microphone for voice input in the composer.</string>
+</dict>
+</plist>

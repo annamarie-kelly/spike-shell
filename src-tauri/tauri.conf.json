@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Spike Shell",
+  "mainBinaryName": "Spike",
+  "version": "0.5.1",
+  "identifier": "com.annamarie.spike-shell",
+  "build": {
+    "frontendDist": "../dist-web",
+    "beforeDevCommand": "npm run build:web && npm run build:cli",
+    "beforeBuildCommand": "npm run build:web && npm run build:cli"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Spike",
+        "width": 1440,
+        "height": 900,
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 19, "y": 13 },
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'sha256-fw1ZFA2QiQul610ojhica4TsztjOPxgZPfoOowgHcgo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost https:; font-src 'self' data:; media-src 'self' blob: data: asset: http://asset.localhost https://asset.localhost; connect-src 'self' ipc: http://ipc.localhost; frame-src 'self' spikehtml: http://spikehtml.localhost https://spikehtml.localhost; object-src 'none'; base-uri 'self'",
+      "dangerousDisableAssetCspModification": ["style-src"],
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**", "**/.*", "**/.*/**"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2QTAxMjU1MDQ2QTE3QzAKUldUQUYyb0VWUktnbHM5bmJHSlhOOEZYaU00TFJUUjFJQUNVZmdyUE52N292RVYraTB5bTRUelcK",
+      "endpoints": [
+        "https://github.com/annamarie-kelly/spike-shell/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": { "../shims/": "shims/", "../bin/": "bin/" },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {}
+  }
+}

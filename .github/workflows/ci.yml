@@ -1,0 +1,34 @@
+name: ci
+
+# The canonical gate: one command an agent (or CI) runs to know a change is safe.
+# `verify` = the Tauri-boundary check + the Node test suite — both green today, so
+# the gate is buildable-on, not born red. Typecheck runs too but is ADVISORY: the
+# project tightens types incrementally (esbuild ships regardless), so it surfaces
+# the error count without blocking. Tighten it into the gate once it reaches zero.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      # Every tracked file must be filed in publish/shell-manifest.json as
+      # published, withheld or shell-owned — so a new file can't drift into the
+      # public export without someone deciding. The manifest is private, so this
+      # step is a no-op in the exported repo, which has no manifest to check.
+      - name: publish manifest covers every file
+        if: hashFiles('publish/shell-manifest.json') != ''
+        run: npm run publish:shell:check
+      - name: typecheck (advisory — not gating)
+        run: npm run typecheck
+        continue-on-error: true

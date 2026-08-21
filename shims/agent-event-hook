@@ -1,0 +1,429 @@
+#!/usr/bin/env python3
+"""
+agent-event-hook — Spike's Claude Code hook adapter.
+
+The first concrete adapter for the agent broker (see agent_broker.rs +
+`02-Thinking/Spike event broker — build plan.md`). Claude Code spawns this
+script for every PreToolUse / PostToolUse event with the event payload on
+stdin; we translate to the canonical agent-event shape and POST to the
+broker on localhost:7878.
+
+One event is not a translation but a decision: PermissionRequest, where the
+hook blocks on the person's Allow/Deny in Spike and answers on their behalf.
+See the inline-approvals section for why that lives there and nowhere else.
+
+We defer annotation evaluation (`from __future__ import annotations`) so the
+PEP 604 `str | None` syntax doesn't crash on the system Python 3.9 that
+older macOS ships — the hook must run on whatever `python3` Claude finds.
+
+Silence on failure is a hard contract: a dead broker, a missing port, a
+malformed payload — none of those may interrupt the Claude session. Hooks
+that throw kill the agent's tool call, and the broker is a side channel.
+We swallow every error and exit 0.
+
+Engine seam: this is the Claude-specific adapter. A Codex equivalent
+would parse Codex's stdout for tool markers and POST the same shape.
+The broker doesn't know or care which one is firing.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+import urllib.request
+
+DEFAULT_PORT = 7878
+
+
+def _port() -> int:
+    """Resolve the broker port, never raising.
+
+    SPIKE_AGENT_PORT is the explicit override and wins (the test suite sets it
+    to a fake server's port). SPIKE_PORT is the ambient one pty.rs exports into
+    every lane, and is what makes the hook follow a port-roamed instance
+    instead of assuming 7878.
+
+    The try/except is load-bearing, not defensive noise. This runs at *module*
+    scope, outside main()'s guard, so a bare int() on a malformed value raises
+    ValueError and the hook exits 1 — which kills the agent's tool call and
+    breaks the module docstring's hard contract. That was reachable: an earlier
+    version read only SPIKE_AGENT_PORT (which nothing sets, so it always fell
+    through to the literal default), while SPIKE_PORT is set in every lane, so
+    one bad value would have taken down every tool call in every lane.
+    """
+    for name in ("SPIKE_AGENT_PORT", "SPIKE_PORT"):
+        raw = os.environ.get(name)
+        if not raw:
+            continue
+        try:
+            port = int(raw)
+        except (TypeError, ValueError):
+            continue          # malformed → fall through, never raise
+        if 0 < port < 65536:
+            return port
+    return DEFAULT_PORT
+
+
+PORT = _port()
+URL = f"http://127.0.0.1:{PORT}/agent-event"
+PERMISSION_URL = f"http://127.0.0.1:{PORT}/agent-permission"
+TIMEOUT_S = 0.5
+
+# ── Inline permission approvals ──────────────────────────────────────────────
+# Spike surfaces permission prompts; it must never invent them. That distinction
+# is the whole of this section.
+#
+# This used to hang off PreToolUse, blocking a fixed list of "worth an explicit
+# yes" tools (Bash, Write, Edit, …) and asking the person in Spike. PreToolUse
+# fires before Claude has decided anything, so the panel appeared for calls
+# Claude was never going to ask about — an allowlisted command, a session in
+# auto or acceptEdits mode — and blocked that tool for up to the budget below
+# while the terminal, correctly, showed no prompt at all. "Why is this popping
+# up?" was the right question, and the answer was: because we asked it.
+#
+# PermissionRequest fires only when a tool call actually needs a decision, after
+# Claude's own rules (mode, allow/deny lists, prior approvals) have run and come
+# up short. It carries the real tool, its input, and the rule that matched, and
+# its decision replaces the prompt rather than racing it. A panel raised from
+# here is one the person would have been asked for anyway — the only kind worth
+# raising.
+
+# The choices the panel offers, in the TUI's own order. Sent with the event so
+# the frontend need not hardcode them (though it has its own copy as a fallback).
+PERMISSION_OPTIONS = [
+    {"id": "allow_once", "label": "Allow once", "scope": "once"},
+    {"id": "allow_session", "label": "Allow for this session", "scope": "session"},
+    {"id": "deny", "label": "Deny", "scope": "deny"},
+]
+
+# How long the hook will wait for the person to answer in Spike before giving up
+# and letting Claude's own prompt take over. Kept comfortably under Claude's
+# hook timeout so the fallback is ours, not a killed hook. The person is being
+# asked for permission — waiting on them is correct, not a stall.
+PERMISSION_BUDGET_S = 45.0
+PERMISSION_POLL_S = 0.4
+# Consecutive poll errors that mean the broker died mid-wait → stop waiting and
+# fall back to the native prompt rather than burn the whole budget on a corpse.
+PERMISSION_POLL_MAX_ERRORS = 5
+
+# cli_listener.rs `authorized()` rejects every route without this header, so a
+# tokenless POST is a silent 403 — which is exactly what killed this stream
+# between e6e429b (2026-06-15) and its repair. pty.rs exports SPIKE_TOKEN into
+# every lane, so the hook inherits it; absent (hook run outside a Spike pty)
+# we still POST and let the broker refuse.
+TOKEN = os.environ.get("SPIKE_TOKEN", "")
+
+# Tools whose successful completion implies a file mutation. We emit a
+# secondary `file.write` event for these in addition to the generic
+# `tool.end`, so the live-preview consumer can subscribe to file.write
+# without re-parsing every tool.end payload.
+FILE_WRITE_TOOLS = {"Write", "Edit", "NotebookEdit", "MultiEdit"}
+
+
+def main() -> None:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return
+
+    event_name = payload.get("hook_event_name", "")
+    tool_name = payload.get("tool_name", "")
+    # Claude Code's session_id is stable for the duration of one /clear
+    # boundary — exactly what we want for run_id. Fall back to a literal
+    # so the broker's `run_id` field stays non-empty.
+    run_id = payload.get("session_id") or "claude-unknown"
+    spike_session = os.environ.get("SPIKE_SESSION_ID")
+
+    if event_name == "PreToolUse":
+        _post(run_id, spike_session, "tool.start", {"tool": tool_name})
+        # AskUserQuestion is the structured question path. Emit a second,
+        # higher-fidelity event so pause-on-question can render `?` instead
+        # of the generic turn-ended `.`. Plain-text questions still surface
+        # via the Stop hook below.
+        #
+        # Carry the question itself (PreToolUse has the full tool_input) so the
+        # chat view can render the options panel the INSTANT the question is
+        # asked, instead of waiting for the assistant row to reach the on-disk
+        # transcript the poller reads. Without the payload the frontend has only
+        # "a question was asked somewhere" and can do nothing but point at the
+        # terminal — which is exactly the handoff this event was meant to avoid.
+        if tool_name == "AskUserQuestion":
+            _post(
+                run_id,
+                spike_session,
+                "question.asked",
+                {"tool": tool_name, "input": payload.get("tool_input") or {}},
+            )
+            return
+        # Note what PreToolUse deliberately does NOT do: ask for permission. It
+        # cannot know whether Claude is going to ask. PermissionRequest can, and
+        # does it there.
+        return
+
+    if event_name == "PermissionRequest":
+        # Claude is about to prompt. Ask the person in Spike instead and honor
+        # their answer here (allow → the tool runs, no dialog; deny → blocked).
+        # This is the one branch that intentionally blocks, and it blocks on a
+        # decision that was already required of somebody.
+        _seek_permission(run_id, spike_session, payload, tool_name)
+        return
+
+    if event_name == "PostToolUse":
+        tool_input = payload.get("tool_input") or {}
+        tool_response = payload.get("tool_response") or {}
+        # Claude reports tool errors via tool_response.is_error. Absent
+        # field → assume success (most tools never set it on the happy
+        # path).
+        ok = not bool(tool_response.get("is_error", False))
+
+        if tool_name in FILE_WRITE_TOOLS and ok:
+            path = (
+                tool_input.get("file_path")
+                or tool_input.get("notebook_path")
+            )
+            if path:
+                _post(
+                    run_id,
+                    spike_session,
+                    "file.write",
+                    {"path": path, "tool": tool_name},
+                )
+
+        end_data = {"tool": tool_name, "ok": ok}
+        # Enrich Bash completions with the command line (and exit code when
+        # Claude reports one) so the log can answer the one question a
+        # path-only audit trail cannot: did a verify/test command run this
+        # session, and did it pass? `ok` already encodes pass/fail; the
+        # command string is what makes "did verify run?" answerable. Bash is
+        # the only tool that runs a shell command, so the enrichment is
+        # scoped to it. We bound the length to keep the jsonl small and never
+        # capture output — commands and paths only, like the rest of the log.
+        if tool_name == "Bash" and isinstance(tool_input, dict):
+            command = tool_input.get("command")
+            if isinstance(command, str) and command:
+                end_data["command"] = command[:1000]
+            code = _exit_code(tool_response)
+            if code is not None:
+                end_data["exit_code"] = code
+
+        _post(run_id, spike_session, "tool.end", end_data)
+        return
+
+    if event_name == "Stop":
+        # Stop fires when the agent's turn ends. `stop_hook_active = true`
+        # means Claude is re-firing Stop because a previous Stop hook asked
+        # the agent to continue — those are programmatic retries, not real
+        # pauses. Drop them; otherwise every retry re-badges a tab the user
+        # just cleared and re-bounces the dock.
+        if bool(payload.get("stop_hook_active", False)):
+            return
+        _post(run_id, spike_session, "turn.ended", {})
+        return
+
+    if event_name == "Notification":
+        # The one signal that tells a turn blocked on a permission prompt apart
+        # from a slow tool. PreToolUse fires before BOTH, so the broker could
+        # never distinguish them — but Notification fires only when Claude is
+        # actually waiting on the person, and `notification_type` says why. We
+        # forward just the "needs you" kinds; the calm view can't express a TUI
+        # allow/deny dialog, so it hands off to the terminal, but it can now do
+        # so the instant the prompt appears instead of guessing after a silence.
+        # idle_prompt / auth_success / *_complete are not blocks and would only
+        # add noise to the log, so they are dropped here rather than app-side.
+        ntype = payload.get("notification_type", "")
+        if ntype in ("permission_prompt", "agent_needs_input", "elicitation_dialog"):
+            _post(run_id, spike_session, "notify", {"notification_type": ntype})
+        return
+
+    # Unknown event name — silently drop. New Claude hook events shouldn't
+    # crash older Spike installs.
+
+
+def _exit_code(tool_response: dict) -> int | None:
+    # Claude Code's Bash tool_response shape has shifted across versions, so
+    # probe the keys that have carried the numeric status. Best-effort — `ok`
+    # is the load-bearing pass/fail signal; this is just sharper when present.
+    # Guard against bool (isinstance(True, int) is True) so `ok` can't leak in.
+    if not isinstance(tool_response, dict):
+        return None
+    for key in ("exit_code", "exitCode", "returncode", "code"):
+        v = tool_response.get(key)
+        if isinstance(v, int) and not isinstance(v, bool):
+            return v
+    return None
+
+
+def _headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    if TOKEN:
+        headers["x-spike-token"] = TOKEN
+    return headers
+
+
+def _post_ok(run_id: str, session_id: str | None, kind: str, data: dict) -> bool:
+    """POST an event; return whether the broker accepted it. Same as _post but
+    the caller can tell a live broker from a dead one — the approval path must
+    not block waiting on a broker that never received the ask."""
+    body = {"run_id": run_id, "kind": kind, "data": data}
+    if session_id:
+        body["session_id"] = session_id
+    try:
+        req = urllib.request.Request(
+            URL,
+            data=json.dumps(body).encode("utf-8"),
+            headers=_headers(),
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=TIMEOUT_S).read()
+        return True
+    except Exception:
+        return False
+
+
+def _post(run_id: str, session_id: str | None, kind: str, data: dict) -> None:
+    _post_ok(run_id, session_id, kind, data)
+
+
+def _permission_target(tool_name: str, tool_input: dict) -> str:
+    """The human subject of a permission prompt: the command, file, or url the
+    tool would act on. Empty when we can't name it — the panel then shows just
+    the action ('Allow the agent to run this command?')."""
+    if not isinstance(tool_input, dict):
+        return ""
+    if tool_name == "Bash":
+        return str(tool_input.get("command") or "")[:200]
+    if tool_name == "WebFetch":
+        return str(tool_input.get("url") or "")
+    return str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+
+
+def _allow_set_path(run_id: str) -> str:
+    d = os.path.join(os.path.expanduser("~"), ".spike", "approvals")
+    os.makedirs(d, exist_ok=True)
+    safe = "".join(c if (c.isalnum() or c in "-_") else "_" for c in run_id)
+    return os.path.join(d, safe + ".json")
+
+
+def _is_session_allowed(run_id: str, key: str) -> bool:
+    try:
+        with open(_allow_set_path(run_id)) as f:
+            return key in set(json.load(f))
+    except Exception:
+        return False
+
+
+def _remember_session_allow(run_id: str, key: str) -> None:
+    """Record a (tool, target) the person allowed for this session, so the same
+    call runs silently next time. Per-run file under ~/.spike/approvals."""
+    try:
+        path = _allow_set_path(run_id)
+        try:
+            with open(path) as f:
+                cur = set(json.load(f))
+        except Exception:
+            cur = set()
+        cur.add(key)
+        with open(path, "w") as f:
+            json.dump(sorted(cur), f)
+    except Exception:
+        pass
+
+
+def _poll_decision(prompt_id: str) -> str | None:
+    """Wait for the UI's Allow/Deny, polling the resolve endpoint. Returns the
+    option id ('allow_once'|'allow_session'|'deny') or None on timeout / a dead
+    broker. The listener is single-threaded, so the wait lives here, not there."""
+    url = f"{PERMISSION_URL}?prompt_id={prompt_id}"
+    deadline = time.time() + PERMISSION_BUDGET_S
+    errors = 0
+    while time.time() < deadline:
+        try:
+            req = urllib.request.Request(url, headers=_headers(), method="GET")
+            body = urllib.request.urlopen(req, timeout=TIMEOUT_S).read()
+            decision = (json.loads(body or b"{}") or {}).get("decision")
+            if decision:
+                return decision
+            errors = 0
+        except Exception:
+            errors += 1
+            if errors >= PERMISSION_POLL_MAX_ERRORS:
+                return None  # broker gone → fall back to the native prompt
+        time.sleep(PERMISSION_POLL_S)
+    return None
+
+
+def _emit_permission_decision(behavior: str) -> None:
+    """Print the PermissionRequest decision Claude reads from stdout. `allow`
+    runs the tool with no native prompt; `deny` blocks it. Printing NOTHING is
+    the third, load-bearing option: it means "we have no answer", and Claude's
+    own prompt takes over — which is what a timeout or an unreachable broker
+    must fall back to."""
+    sys.stdout.write(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {"behavior": behavior},
+        }
+    }))
+    sys.stdout.flush()
+
+
+def _seek_permission(run_id, spike_session, payload, tool_name) -> None:
+    """Ask the person, in Spike, whether to allow this tool — and honor the
+    answer. Never hangs: a session-allow short-circuits, an unreachable broker
+    or a timeout falls through to Claude's own prompt (so the terminal remains
+    the honest backstop)."""
+    tool_input = payload.get("tool_input") or {}
+    target = _permission_target(tool_name, tool_input)
+    key = tool_name + "\x1f" + target
+
+    # Already allowed for this session → run it silently, no panel. Claude does
+    # not learn from our allow, so it will ask again for the same call; this set
+    # is what makes "Allow for this session" mean what it says.
+    if _is_session_allowed(run_id, key):
+        _emit_permission_decision("allow")
+        return
+
+    # prompt_id is Claude's own id for this decision; tool_use_id is the stable
+    # per-call fallback for a build that doesn't send one.
+    prompt_id = (
+        payload.get("prompt_id")
+        or payload.get("tool_use_id")
+        or f"{run_id}:{os.getpid()}:{int(time.time() * 1000)}"
+    )
+
+    # Emit the ask. If the broker won't take it, don't block — let Claude's own
+    # prompt handle it, exactly as before this feature existed.
+    if not _post_ok(run_id, spike_session, "permission.ask", {
+        "prompt_id": prompt_id,
+        "tool": tool_name,
+        "target": target,
+        "options": PERMISSION_OPTIONS,
+    }):
+        return
+
+    decision = _poll_decision(prompt_id)
+    # Tell the UI the panel is resolved (or timed out) so it clears rather than
+    # lingering — and other windows on the same lane converge.
+    _post(run_id, spike_session, "permission.resolved",
+          {"prompt_id": prompt_id, "decision": decision or "timeout"})
+
+    if decision == "allow_session":
+        _remember_session_allow(run_id, key)
+        _emit_permission_decision("allow")
+    elif decision == "allow_once":
+        _emit_permission_decision("allow")
+    elif decision == "deny":
+        _emit_permission_decision("deny")
+    # else: timeout / no answer → print nothing → Claude's native prompt shows.
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        # Hard contract (see module docstring): a hook that raises kills the
+        # agent's tool call. Any unexpected payload shape — a non-dict
+        # tool_response, a missing field — must still exit 0. main() guards
+        # json parsing; this guards everything after it.
+        pass

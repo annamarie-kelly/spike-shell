@@ -1,0 +1,22 @@
+# The default playbook for this repo. `⌘K → c:playbook` picks this up automatically
+# (workspace `playbook` field → this file → the built-in starter, in that order).
+#
+# It runs a coding turn for your task, then gates on checks that PASS in this repo. (The
+# built-in starter uses `npm run typecheck`, which currently fails on pre-existing app.ts
+# errors, so it is a poor first demo here — this file uses build + the playbook tests.)
+name: How I code + verify
+description: Make the smallest real change, then let my checks gate it.
+scope: global
+
+steps:
+  - Implement the smallest change that satisfies the request.
+  - Keep edits inside the touched module unless told otherwise.
+  - Do not weaken, skip, or edit a check to make it pass.
+
+checks:
+  - { run: "node build.mjs", expect: exit-zero, label: build }
+  - { run: "node --test test/playbook.test.mjs", expect: exit-zero, label: playbook tests }
+
+on_fail: gate
+engine: claude
+max_redos: 2

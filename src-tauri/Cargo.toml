@@ -1,0 +1,86 @@
+[package]
+name = "spike"
+version = "0.5.1"
+description = "Spike: a native shell around Claude Code — file tree, grouped terminals, preview/editor."
+edition = "2021"
+license = "MIT"
+# Both bins are declared explicitly below. Without autobins = false, Cargo
+# would also auto-discover src/bin/spike.rs and collide with the explicit
+# `spike` entry — duplicate [[bin]] is a build error.
+autobins = false
+# `tauri dev` invokes `cargo run` without --bin; with two binaries declared
+# (Spike + spike CLI), cargo can't pick one. Pin the Tauri app as the default.
+default-run = "Spike"
+
+# Capitalized so the macOS Dock label reads "Spike" in dev (label = binary name).
+[[bin]]
+name = "Spike"
+path = "src/main.rs"
+
+# Native CLI shipped at Spike.app/Contents/Resources/bin/spike. Talks to the
+# in-app tiny_http listener over 127.0.0.1:7878. Replaces the legacy Node
+# script so Spike.app no longer needs Node on the host.
+#
+# Name MUST differ case-insensitively from the GUI bin "Spike" above —
+# macOS APFS is case-insensitive by default, so a lowercase "spike" would
+# clobber "Spike" in target/release/, and Tauri would bundle the CLI binary
+# as the app's main executable. The build:cli npm script copies this to
+# bin/spike (lowercase) for shipping inside the bundle.
+[[bin]]
+name = "spike-cli"
+path = "src/bin/spike.rs"
+
+# The lib name must not collide with the binary; Tauri convention is <name>_lib.
+[lib]
+name = "spike_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# datatable.rs (pub mod in lib.rs) uses this and the published manifest never
+# declared it, so the crate did not compile as shipped. `bundled` compiles
+# SQLite in rather than depending on whatever the host has.
+rusqlite = { version = "0.32", features = ["bundled"] }
+# protocol-asset: the preview panel renders images/PDFs/media via convertFileSrc()
+# (the old `/raw` endpoint), which needs the asset: protocol.
+# NOTE: the `devtools` feature is deliberately NOT enabled. Tauri turns the
+# WebKit Inspector on automatically in debug builds, so `tauri dev` still has
+# it; enabling the feature would also compile the inspector into the public
+# RELEASE bundle, shipping "Inspect Element" + the IPC surface to end users.
+# `unstable` enables multi-webview (Window::add_child) — the native child
+# webview that renders a live local URL pinned over the preview pane.
+tauri = { version = "2", features = ["protocol-asset", "unstable"] }
+tauri-plugin-dialog = "2"
+portable-pty = "0.9"
+notify = "8"
+trash = "5"
+base64 = "0.22"
+# RFC-compliant URL parsing for the reader's SSRF guard (correct host extraction
+# so userinfo/IPv6/redirect tricks can't smuggle a private host past the check).
+url = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Typed parse of a template bundle's manifest.yaml (the trust contract the
+# install gate verifies). Manifest declares COUNTS only; tiering is code policy.
+serde_yaml = "0.9"
+tiny_http = "0.12"
+dirs = "6"
+tauri-plugin-decorum = "1.1.1"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+
+# macOS share sheet (preview tab → Share…). Driven via raw msg_send! against
+# AppKit's NSSharingServicePicker, so we only need objc2's runtime + Foundation
+# geometry/string types — no objc2-app-kit typed bindings. Versions match what
+# Tauri already resolves, so this adds no new crate, just two foundation features.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSGeometry"] }
+# NSEvent local key monitor (Esc-to-exit preview full-screen) needs an Obj-C
+# block; already in the tree via wry, just declared here to `use` it directly.
+block2 = "0.6"
+
+[dev-dependencies]
+filetime = "0.2"

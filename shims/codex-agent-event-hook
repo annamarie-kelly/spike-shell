@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""
+codex-agent-event-hook — Spike's Codex hook adapter.
+
+Sibling of shims/agent-event-hook (the Claude adapter). Codex spawns this
+script for every PreToolUse / PostToolUse / Stop event with the event payload
+on stdin (schema: docs/plans/codex-hook-trust-spike.md, Q2). We translate to
+the canonical agent-event shape and POST to the Spike bridge, so a Codex tab
+lights up the same tool timeline / preview-refresh / pause indicator a Claude
+tab does. The broker never learns the word "Codex": all engine-specific
+knowledge lives here.
+
+We defer annotation evaluation (`from __future__ import annotations`) so the
+PEP 604 `str | None` syntax doesn't crash on the system Python 3.9 that older
+macOS ships — the hook must run on whatever `python3` Codex finds.
+
+Silence on failure is a hard contract, identical to the Claude hook: a dead
+broker, a wrong port, a malformed payload, a rejected trust hash — none of
+those may interrupt, slow, or crash the Codex session. A hook that throws
+kills the agent's tool call, and the broker is a side channel. We swallow every
+error and exit 0.
+
+Two deviations from the Claude hook, both forced by Spike's own wiring and both
+documented in docs/plans/codex-agent-event-adapter.md:
+  * We send `X-Spike-Token: $SPIKE_TOKEN`. The CLI bridge's `authorized()`
+    guard (cli_listener.rs, June-15 lockdown) rejects every tokenless request.
+    pty.rs injects SPIKE_TOKEN into every spawn, so it's in our env.
+  * We resolve the port via the same `_port()` helper the Claude hook uses
+    (SPIKE_AGENT_PORT override, else the ambient SPIKE_PORT pty.rs injects,
+    which follows a port-roamed instance instead of assuming 7878).
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.request
+
+DEFAULT_PORT = 7878
+
+
+def _port() -> int:
+    """Resolve the broker port, never raising. Shares the Claude hook's helper.
+
+    SPIKE_AGENT_PORT is the explicit override and wins (the test suite sets it
+    to a fake server's port). SPIKE_PORT is the ambient one pty.rs exports into
+    every lane, and is what makes the hook follow a port-roamed instance
+    instead of assuming 7878.
+
+    The try/except is load-bearing, not defensive noise. This runs at *module*
+    scope, outside main()'s guard, so a bare int() on a malformed value raises
+    ValueError and the hook exits 1 — which kills the agent's tool call and
+    breaks the module docstring's hard contract.
+    """
+    for name in ("SPIKE_AGENT_PORT", "SPIKE_PORT"):
+        raw = os.environ.get(name)
+        if not raw:
+            continue
+        try:
+            port = int(raw)
+        except (TypeError, ValueError):
+            continue          # malformed → fall through, never raise
+        if 0 < port < 65536:
+            return port
+    return DEFAULT_PORT
+
+
+PORT = _port()
+URL = f"http://127.0.0.1:{PORT}/agent-event"
+TIMEOUT_S = 0.5
+TOKEN = os.environ.get("SPIKE_TOKEN", "")
+
+# Codex's file-mutating tool. Its successful completion means files changed, so
+# we emit a secondary `file.write` (one per path) in addition to `tool.end`,
+# exactly as the Claude hook does for Write/Edit/NotebookEdit/MultiEdit. This
+# is what drives the live-preview auto-refresh — first-class, not optional.
+FILE_WRITE_TOOL = "apply_patch"
+
+
+def main() -> None:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return
+    if not isinstance(payload, dict):
+        return
+
+    # A trust self-check that costs nothing: the mere existence of this file
+    # after any Codex tool activity proves the seeded hash was accepted and the
+    # hook fired. Best-effort — never let it break the hook.
+    _touch_heartbeat()
+
+    event_name = payload.get("hook_event_name", "")
+    tool_name = payload.get("tool_name", "")
+    # Codex's session_id (UUIDv7) is stable for the conversation — our run_id.
+    # Each Spike tab is its own Codex session, so this never merges tabs; the
+    # literal fallback only guards the (unexpected) missing-field case and keeps
+    # the broker's run_id non-empty.
+    run_id = payload.get("session_id") or "codex-unknown"
+    spike_session = os.environ.get("SPIKE_SESSION_ID")
+
+    if event_name == "PreToolUse":
+        _post(run_id, spike_session, "tool.start", {"tool": tool_name})
+        # NOTE: Codex has no structured question event (spec R3). Pause-on-
+        # question degrades to the generic turn.ended `.` at Stop; we never
+        # emit Claude's higher-fidelity `question.asked` / `?` here.
+        return
+
+    if event_name == "PostToolUse":
+        tool_input = payload.get("tool_input")
+        if not isinstance(tool_input, dict):
+            tool_input = {}
+        ok = _tool_ok(payload.get("tool_response"))
+
+        if tool_name == FILE_WRITE_TOOL and ok:
+            cwd = payload.get("cwd") or ""
+            for path in _patch_paths(tool_input, cwd):
+                _post(
+                    run_id,
+                    spike_session,
+                    "file.write",
+                    {"path": path, "tool": tool_name},
+                )
+
+        _post(run_id, spike_session, "tool.end", {"tool": tool_name, "ok": ok})
+        return
+
+    if event_name == "Stop":
+        # Stop fires when the agent's turn ends → the pause/turn-end indicator.
+        # `stop_hook_active = true` means Codex is re-firing Stop because a
+        # previous Stop hook asked it to continue — a programmatic retry, not a
+        # real pause. Drop those, mirroring the Claude hook, so a retry doesn't
+        # re-badge a tab.
+        if bool(payload.get("stop_hook_active", False)):
+            return
+        _post(run_id, spike_session, "turn.ended", {})
+        return
+
+    # Unknown event name (a future Codex hook event) — silently drop, so a Codex
+    # upgrade degrades cleanly instead of erroring.
+
+
+def _tool_ok(tool_response: object) -> bool:
+    """Best-effort success parse of Codex's tool_response.
+
+    Codex reports results as a STRING ("Exit code: 0\\nWall time: …\\nOutput:…"),
+    unlike Claude's object with is_error. Treat a non-zero `Exit code: N` as a
+    failure; everything else (including a missing/oddly-shaped response) is
+    success — `ok` is a soft signal and over-reporting success is the forgiving
+    default the Claude hook also takes.
+    """
+    if isinstance(tool_response, str):
+        marker = "Exit code:"
+        idx = tool_response.find(marker)
+        if idx != -1:
+            rest = tool_response[idx + len(marker):].lstrip()
+            num = ""
+            for ch in rest:
+                if ch.isdigit() or (ch == "-" and not num):
+                    num += ch
+                else:
+                    break
+            if num:
+                try:
+                    return int(num) == 0
+                except ValueError:
+                    return True
+    # dict shape (future Codex versions might align with Claude) — honor is_error
+    if isinstance(tool_response, dict):
+        return not bool(tool_response.get("is_error", False))
+    return True
+
+
+def _patch_paths(tool_input: dict, cwd: str) -> list:
+    """Absolute paths touched by an apply_patch call.
+
+    The patch text lives in `tool_input.command` (trust-spike Q2); we fall back
+    to any string field carrying a Begin-Patch header so a field rename in a
+    future Codex build doesn't silently drop file.write. Paths come from the
+    `*** Add/Update/Delete File:` and `*** Move to:` headers and are resolved to
+    absolute against the payload's cwd (patch paths are cwd-relative; the
+    preview consumer keys on absolute paths, like Claude's file_path).
+    """
+    patch = tool_input.get("command")
+    if not (isinstance(patch, str) and "*** Begin Patch" in patch):
+        patch = None
+        for v in tool_input.values():
+            if isinstance(v, str) and "*** Begin Patch" in v:
+                patch = v
+                break
+    if not isinstance(patch, str):
+        return []
+
+    prefixes = (
+        "*** Add File: ",
+        "*** Update File: ",
+        "*** Delete File: ",
+        "*** Move to: ",
+    )
+    out = []
+    seen = set()
+    for line in patch.splitlines():
+        line = line.rstrip("\r")
+        for pre in prefixes:
+            if line.startswith(pre):
+                rel = line[len(pre):].strip()
+                if not rel:
+                    break
+                path = rel if os.path.isabs(rel) else os.path.normpath(
+                    os.path.join(cwd, rel)
+                )
+                if path not in seen:
+                    seen.add(path)
+                    out.append(path)
+                break
+    return out
+
+
+def _touch_heartbeat() -> None:
+    home = os.environ.get("SPIKE_CODEX_HOME") or os.environ.get("CODEX_HOME")
+    if not home:
+        return
+    try:
+        with open(os.path.join(home, ".spike-hook-fired"), "w") as f:
+            f.write("1")
+    except Exception:
+        pass
+
+
+def _post(run_id: str, session_id: str | None, kind: str, data: dict) -> None:
+    body = {"run_id": run_id, "kind": kind, "data": data}
+    if session_id:
+        body["session_id"] = session_id
+    try:
+        headers = {"Content-Type": "application/json"}
+        # The bridge's authorized() guard rejects any request without a matching
+        # token. Absent SPIKE_TOKEN → the POST 403s and we swallow it (silence
+        # on failure), same as any other delivery failure.
+        if TOKEN:
+            headers["X-Spike-Token"] = TOKEN
+        req = urllib.request.Request(
+            URL,
+            data=json.dumps(body).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=TIMEOUT_S).read()
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        # Hard contract (see module docstring): a hook that raises kills the
+        # agent's tool call. Any unexpected payload shape must still exit 0.
+        # main() guards json parsing; this guards everything after it.
+        pass

@@ -1,0 +1,25 @@
+node_modules/
+.DS_Store
+dist/
+dist-web/
+public/app.js
+public/app.js.map
+src-tauri/target/
+src-tauri/gen/schemas/
+# Compiled by `npm run build:cli` from src-tauri/src/bin/spike.rs.
+bin/spike
+# Headless-verify screenshots
+verify/out/
+# Python shim bytecode + local agent worktrees — never shared.
+shims/__pycache__/
+.claude/worktrees/
+# Per-machine agent state: worktrees (each with its own src-tauri/target/),
+# session logs, scratch. Never shared.
+.spike/
+# Local release/signing tooling — kept off GitHub by choice (don't publish a
+# turnkey notarize-and-ship pipeline). Lives only on the release machine.
+scripts/release-dmg.sh
+scripts/.env.notarize
+scripts/.env.notarize.example
+dist-dmg/
+node_modules

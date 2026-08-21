@@ -1,0 +1,126 @@
+#!/bin/sh
+# claude — Spike's wrapper for the Claude Code CLI. It lives in shims/, which the
+# server prepends to the embedded terminal's PATH (and which, unlike bin/, is NOT
+# meant to be on your normal PATH), so it's only ahead of the real claude *inside*
+# Spike and never shadows it in an ordinary terminal. Its jobs: inject Spike's
+# system prompt (which teaches the session about the preview panel), register the
+# agent-broker hook with Claude Code, and hand off to the real claude with every
+# original argument intact.
+#
+# Why a wrapper instead of passing --append-system-prompt from the server: once
+# Claude is hosted inside a shell, exiting it drops you to a live prompt where
+# you can relaunch with a bare `claude`. Centralizing the prompt here means that
+# hand-typed relaunch is taught exactly what Spike's own launch is.
+#
+# The prompt text is supplied by the server via $SPIKE_SYSTEM_PROMPT, so this
+# file carries no copy of it (single source of truth = src/server.ts). Unset or
+# empty → run the real claude untouched (and no hook install — the user is
+# running plain claude in some other terminal that happens to have us on PATH).
+#
+# Engine seam: --append-system-prompt is Claude Code's contract. A Codex shim
+# would write $SPIKE_SYSTEM_PROMPT to $CODEX_HOME/AGENTS.md instead — Codex CLI
+# has no system-prompt flag, only the AGENTS.md tree walk.
+
+# Find the real claude on PATH, skipping this wrapper's own directory so we
+# don't exec ourselves. Falls back to the usual install location.
+self=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+real=
+IFS=:
+for d in $PATH; do
+  [ "$d" = "$self" ] && continue
+  if [ -x "$d/claude" ]; then real=$d/claude; break; fi
+done
+unset IFS
+[ -z "$real" ] && real=$HOME/.local/bin/claude
+
+# Register the agent-broker hook with Claude Code on first Spike-launched run.
+# Idempotent per-event: python checks each hook event independently, so
+# upgrades that add new events (Stop, etc.) merge cleanly into older installs.
+#
+# Dedup is by *basename* of the hook command, not full path: the bundled
+# wrapper resolves $self to Spike.app/Contents/.../shims while a dev-tree
+# launch resolves to /Users/.../spike/shims. Both ARE this hook; exact-path
+# equality would append a duplicate every time the launch location changed
+# (we hit this the first time a fresh .app replaced the dev build).
+#
+# Gated on SPIKE_SYSTEM_PROMPT so plain-claude invocations (the wrapper happens
+# to be on PATH somehow) never silently mutate user settings.
+hook="$self/agent-event-hook"
+settings="$HOME/.claude/settings.json"
+if [ -n "$SPIKE_SYSTEM_PROMPT" ] && [ -x "$hook" ]; then
+  mkdir -p "$HOME/.claude" 2>/dev/null
+  python3 - "$settings" "$hook" <<'PY' 2>/dev/null || true
+import json, os, sys
+path, hook = sys.argv[1], sys.argv[2]
+hook_basename = os.path.basename(hook)
+# The command is a SHELL STRING, not an argv, so a path containing a space has
+# to be quoted or the shell splits it. Installing to "/Applications/Spike
+# Dev.app/…" produced `/Applications/Spike: No such file or directory` on every
+# PreToolUse, PostToolUse and Stop — in every Claude session on the machine,
+# naming a path nobody had written. Renaming the app is enough to trigger it.
+quoted_hook = "'" + hook.replace("'", "'\\''") + "'" if (' ' in hook or '"' in hook or "'" in hook) else hook
+
+def unquote(cmd):
+    """Recover the path from a command we may have written quoted."""
+    cmd = cmd.strip()
+    if len(cmd) >= 2 and cmd[0] == cmd[-1] and cmd[0] in "'\"":
+        return cmd[1:-1].replace("'\\''", "'")
+    return cmd
+
+def is_spike(h):
+    # Match on basename so a Spike that moved (dev tree → .app, or a rename)
+    # refreshes its entry instead of appending a second one. Unquote first, or
+    # a previously-quoted path fails to match and duplicates.
+    return os.path.basename(unquote(h.get("command", ""))) == hook_basename
+try:
+    with open(path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    # Don't overwrite a corrupted settings.json — if json.load fails on a
+    # non-empty file, we'd destroy whatever's there. Only proceed when the
+    # file is missing entirely (FileNotFoundError opens to {}).
+    if not isinstance(sys.exc_info()[1], FileNotFoundError):
+        sys.exit(0)
+    data = {}
+hooks = data.setdefault("hooks", {})
+spike_hook = {"type": "command", "command": quoted_hook}
+changed = False
+for ev in ("PreToolUse", "PostToolUse", "Stop", "Notification", "PermissionRequest"):
+    arr = hooks.setdefault(ev, [])
+    # Cleanup pass: strip every existing Spike hook (matched by basename).
+    # User-defined hooks in the same group survive; groups that held ONLY
+    # Spike hooks become empty and are dropped so the file stays tidy.
+    existing = []
+    for e in arr:
+        kept = []
+        for h in (e.get("hooks") or []):
+            if is_spike(h):
+                existing.append(h.get("command", ""))
+            else:
+                kept.append(h)
+        e["hooks"] = kept
+    arr[:] = [e for e in arr if e.get("hooks")]
+    # Install pass: one Spike hook in the matcher:"*" group (preferred so
+    # user-defined "*" hooks aren't fired twice from a duplicate group).
+    star = next((e for e in arr if e.get("matcher") == "*"), None)
+    if star is not None:
+        star.setdefault("hooks", []).append(spike_hook)
+    else:
+        arr.append({"matcher": "*", "hooks": [spike_hook]})
+    # Mark dirty when we deduped (≠1 prior entry) or refreshed a stale path.
+    if len(existing) != 1 or existing[0] != quoted_hook:
+        changed = True
+if changed:
+    tmp = path + ".spike-tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+PY
+fi
+
+if [ -n "$SPIKE_SYSTEM_PROMPT" ]; then
+  exec "$real" --append-system-prompt "$SPIKE_SYSTEM_PROMPT" "$@"
+else
+  exec "$real" "$@"
+fi

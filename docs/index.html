@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+  /* Set theme before first paint: saved choice wins, else default to light. Prevents a flash for returning dark-theme visitors. */
+  (function () {
+    try {
+      var saved = localStorage.getItem('spike-theme');
+      document.documentElement.dataset.theme = saved || 'light';
+    } catch (e) {}
+  })();
+</script>
+<title>Spike · Stay sharp, a native shell around Claude Code & OpenAI Codex</title>
+<meta name="description" content="An editor for an AI world. The agent does the work; Spike is stripped to the loop that is left: point it, watch it build, see the result, steer. Not a coding tool. A tool for all your work. Stay sharp." />
+<meta property="og:title" content="Spike, an editor built for an AI world. Stay sharp." />
+<meta property="og:description" content="The agent does the work now. Spike strips the editor down to the loop that is left: point it, watch it build, see the result, steer. Grouped contexts, a preview that edits, a log you can mine. Not a coding tool, a tool for all your work. Open source, MIT, macOS." />
+<meta property="og:image" content="https://annamarie-kelly.github.io/spike/assets/og.png" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://annamarie-kelly.github.io/spike/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Spike, an editor built for an AI world. Stay sharp." />
+<meta name="twitter:description" content="The agent does the work; Spike is stripped to the loop that is left. Grouped contexts, a preview that edits, a log you mine. Not a coding tool, a tool for all your work. Open source, MIT, macOS." />
+<meta name="twitter:image" content="https://annamarie-kelly.github.io/spike/assets/og.png" />
+<meta name="theme-color" content="#1C1A18" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#F4F0EA" media="(prefers-color-scheme: light)" />
+<link rel="canonical" href="https://annamarie-kelly.github.io/spike/" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Spline+Sans+Mono:wght@400;500;600&family=Spline+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ─── Tokens (Spike's own app theme) ───────────────────────── */
+  :root { --mark: url("data:image/png;base64,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"); }
+  :root[data-theme="dark"] {
+    --bg: #1C1A18;
+    --surface: #2A2826;
+    --surface-soft: #211F1D;
+    --elevated: #322F2D;
+    --ink: #F2EEE9;
+    --ink-soft: #CFC9C2;
+    --ink-ghost: #9E9891;
+    --ink-faint: #7D7872;
+    --edge: #3A3836;
+    --edge-soft: #2F2D2B;
+    --rose: #E2A299;
+    --rose-deep: #C9837A;
+    --rose-fill: rgba(226, 162, 153, 0.09);
+    --sage: #A8BDA8;
+    --tan: #C7B97F;
+    --mauve: #B898A8;
+    --term-green: #A8BDA8;
+    --shadow-app: 0 40px 100px -30px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03);
+    --shadow-card: 0 1px 0 rgba(255,255,255,0.02), 0 8px 24px -12px rgba(0,0,0,0.5);
+    --grain-opacity: 0.028;
+  }
+  :root[data-theme="light"] {
+    --bg: #F4F0EA;
+    --surface: #EAE5DD;
+    --surface-soft: #ECE7DF;
+    --elevated: #FFFFFF;
+    --ink: #1A1816;
+    --ink-soft: #3D3935;
+    --ink-ghost: #6B655E;
+    --ink-faint: #8E867E;
+    --edge: #D6CFC4;
+    --edge-soft: #DFD8CE;
+    --rose: #B85F4E;
+    --rose-deep: #8E4537;
+    --rose-fill: rgba(184, 95, 78, 0.08);
+    --sage: #5C7A5C;
+    --tan: #8B6F2A;
+    --mauve: #6F4E61;
+    --term-green: #5C7A5C;
+    --shadow-app: 0 40px 100px -30px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.04);
+    --shadow-card: 0 1px 0 rgba(0,0,0,0.02), 0 8px 24px -12px rgba(0,0,0,0.1);
+    --grain-opacity: 0.04;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 64px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--bg);
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Spline Sans", -apple-system, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.65;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+    transition: background 280ms ease, color 200ms ease;
+  }
+
+  /* Film grain so the page doesn't feel digitally flat. */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 1;
+    opacity: var(--grain-opacity);
+    background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    mix-blend-mode: overlay;
+  }
+
+  .progress {
+    position: fixed; top: 0; left: 0; height: 2px; width: 100%;
+    background: var(--rose);
+    transform-origin: 0 50%;
+    transform: scaleX(0);
+    z-index: 60;
+    transition: transform 80ms ease-out;
+  }
+
+  /* ─── Top bar ──────────────────────────────────────────────── */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 52px;
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    border-bottom: 1px solid var(--edge-soft);
+    z-index: 50;
+    display: flex; align-items: center;
+    padding: 0 28px;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; flex: 1; }
+  .topbar-mark {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: #141210;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.07);
+  }
+  .topbar-mark { background-image: var(--mark); background-size: 14px 14px; background-position: center; background-repeat: no-repeat; }
+  .topbar-title {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+  }
+  .topbar-title strong { color: var(--ink); font-weight: 600; }
+  .topbar-right { display: flex; align-items: center; gap: 6px; }
+  .iconbtn {
+    background: transparent;
+    color: var(--ink-ghost);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 6px 11px;
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+    text-decoration: none;
+    transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
+  }
+  .iconbtn:hover { color: var(--ink); background: var(--surface); border-color: var(--edge-soft); }
+
+  /* ─── Layout ───────────────────────────────────────────────── */
+  .shell {
+    position: relative;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 110px 28px 0;
+    z-index: 2;
+  }
+
+  /* ─── Hero ─────────────────────────────────────────────────── */
+  .hero { position: relative; padding: 48px 0 24px; }
+  .hero-mark {
+    width: 76px; height: 76px;
+    border-radius: 19px;
+    background: #141210;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 38px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08),
+                0 24px 50px -20px rgba(0,0,0,0.6),
+                0 0 90px -10px var(--rose-fill);
+    animation: fadeUp 700ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  }
+  .hero-mark img {
+    width: 46px; height: 46px; display: block;
+    transition: transform 700ms cubic-bezier(0.2, 0.6, 0.2, 1);
+  }
+  .hero-mark:hover img { transform: rotate(90deg); }
+  .hero-eyebrow {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--rose);
+    margin-bottom: 30px;
+    display: flex; align-items: center; gap: 10px;
+    animation: fadeUp 700ms 50ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  }
+  .hero-eyebrow .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--rose); }
+  .hero-eyebrow .sep { color: var(--ink-faint); letter-spacing: 0; }
+  .hero h1 {
+    font-family: "Fraunces", Georgia, serif;
+    font-optical-sizing: auto;
+    font-size: clamp(44px, 6.5vw, 84px);
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    font-weight: 420;
+    color: var(--ink);
+    max-width: 14ch;
+    animation: fadeUp 900ms 120ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  }
+  .hero h1 em {
+    font-style: italic;
+    font-weight: 380;
+    color: var(--rose);
+  }
+  .hero-tagline {
+    margin-top: 30px;
+    font-size: 19px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 46ch;
+    animation: fadeUp 1000ms 220ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  }
+  .hero-tagline strong { color: var(--ink); font-weight: 500; }
+  .hero-actions {
+    margin-top: 44px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    animation: fadeUp 1100ms 320ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  }
+  .cta {
+    display: inline-flex; align-items: center; gap: 11px;
+    padding: 14px 22px;
+    background: var(--ink);
+    color: var(--bg);
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: transform 180ms ease, box-shadow 180ms ease;
+  }
+  .cta:hover { transform: translateY(-1px); box-shadow: 0 12px 28px -10px rgba(0,0,0,0.45); }
+  .cta .arrow { display: inline-block; transition: transform 180ms ease; }
+  .cta:hover .arrow { transform: translateX(3px); }
+  .dl-btn { gap: 9px; }
+  .dl-btn .apple { width: 16px; height: 16px; fill: currentColor; display: block; flex: none; }
+  .dl-btn .qual { font-weight: 400; opacity: 0.6; margin-left: 4px; }
+  /* in-prose download button: fully neutralize .section a (rose text, underline
+     gradient, padding-bottom:2px, underline transition) so it renders identically
+     to the hero button instead of as a second, divergent variant. */
+  .section a.dl-btn { color: var(--bg); background-image: none; padding-bottom: 14px; transition: transform 180ms ease, box-shadow 180ms ease; }
+  .hero-note { margin-top: 14px; font-size: 13px; color: var(--rose); }
+  .hero-note a { color: var(--rose); text-decoration: underline; text-underline-offset: 2px; }
+  .clone-line {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 12.5px;
+    color: var(--ink-ghost);
+    background: var(--surface-soft);
+    border: 1px solid var(--edge-soft);
+    border-radius: 8px;
+    padding: 13px 18px;
+    display: inline-flex; align-items: center; gap: 10px;
+    cursor: pointer;
+    transition: color 140ms ease, border-color 140ms ease;
+    user-select: all;
+  }
+  .clone-line:hover { color: var(--ink-soft); border-color: var(--edge); }
+  .clone-line .ps1 { color: var(--rose); user-select: none; }
+  .clone-line.copied { color: var(--sage); border-color: color-mix(in srgb, var(--sage) 45%, var(--edge-soft)); }
+  .clone-line .copied-tag { display: none; color: var(--sage); }
+  .clone-line.copied .copied-tag { display: inline; }
+
+  /* project facts, live where it pays, stubbed where it doesn't (cf. loops-os meta row) */
+  .hero-stats {
+    margin-top: 34px;
+    display: flex; flex-wrap: wrap; gap: 30px;
+    animation: fadeUp 1100ms 380ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  }
+  .hero-stats .stat {
+    display: flex; flex-direction: column; gap: 3px;
+    text-decoration: none;
+  }
+  .hero-stats a.stat:hover .stat-v { color: var(--rose); }
+  .hero-stats .stat-k {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .hero-stats .stat-v {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 14px; color: var(--ink-soft);
+    transition: color 140ms ease;
+  }
+
+  /* real-screenshot caption, to match the CSS-mockup stage-caption voice */
+  .shot figcaption, .stage > figcaption {
+    margin-top: 16px; text-align: center;
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.04em; color: var(--ink-faint);
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ─── App mockup ───────────────────────────────────────────── */
+  .stage {
+    position: relative;
+    margin: 64px 0 0;
+    animation: fadeUp 1200ms 420ms cubic-bezier(0.2, 0.6, 0.2, 1) both;
+  }
+  /* big soft spike-mark watermark behind the window */
+  .stage::before {
+    content: "";
+    position: absolute;
+    top: -120px; right: -140px;
+    width: 480px; height: 480px;
+    background: var(--mark) center / contain no-repeat;
+    opacity: 0.05;
+    pointer-events: none;
+    transform: rotate(12deg);
+  }
+  :root[data-theme="light"] .stage::before { filter: invert(1); opacity: 0.06; }
+
+  .app {
+    position: relative;
+    background: #1C1A18;
+    border: 1px solid #3A3836;
+    border-radius: 12px;
+    box-shadow: var(--shadow-app);
+    overflow: hidden;
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: #CFC9C2;
+  }
+  .app * { font-family: inherit; }
+  .app-titlebar {
+    height: 38px;
+    background: #211F1D;
+    border-bottom: 1px solid #2F2D2B;
+    display: flex; align-items: center;
+    padding: 0 14px;
+    gap: 14px;
+  }
+  .lights { display: flex; gap: 7px; }
+  .light { width: 11px; height: 11px; border-radius: 50%; }
+  .light.r { background: #E0655A; } .light.y { background: #E0A33E; } .light.g { background: #6BAA5E; }
+  .tabstrip { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; }
+  .group-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px;
+    border-radius: 99px;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    color: #F2EEE9;
+    white-space: nowrap;
+  }
+  .group-pill .gdot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .group-pill.sage { background: rgba(168,189,168,0.16); color: #A8BDA8; }
+  .group-pill.rose { background: rgba(226,162,153,0.16); color: #E2A299; }
+  .app-tab {
+    padding: 3px 12px;
+    border-radius: 6px;
+    color: #7D7872;
+    white-space: nowrap;
+  }
+  .app-tab.active { background: #322F2D; color: #F2EEE9; }
+  .app-tab .plus { color: #7D7872; }
+  /* chrome refinements to match the actual app: OS titlebar + folder picker, a tab row, tree counts, preview toggles */
+  .app-name { font-family: "Spline Sans", -apple-system, sans-serif; font-size: 12px; font-weight: 500; color: #CFC9C2; }
+  .folder-pick {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 10.5px; color: #9E9891;
+    background: #1C1A18; border: 1px solid #3A3836; border-radius: 7px; padding: 3px 9px;
+  }
+  .folder-pick .chev { color: #7D7872; font-size: 9px; }
+  .app-tabrow { height: 36px; background: #1E1C1A; border-bottom: 1px solid #2F2D2B; display: flex; align-items: center; padding: 0 12px; }
+  .tab-x { margin-left: 8px; color: #7D7872; font-size: 11px; }
+  .app-tab.active .tab-x { color: #B7B1AA; }
+  .tree-head { display: flex; align-items: center; justify-content: space-between; color: #7D7872; letter-spacing: 0.04em; font-size: 9.5px; padding: 0 6px 8px; }
+  .tree-add { color: #7D7872; font-size: 12px; line-height: 1; }
+  .tree-row.dir { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .tcount { color: #55504B; font-size: 9px; font-variant-numeric: tabular-nums; }
+  .pv-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 9px; text-transform: none; }
+  .pv-ic { color: #7D7872; font-size: 10px; letter-spacing: 0; }
+  .pv-eye { color: #A8BDA8; display: block; }
+  .app-body { display: grid; grid-template-columns: 168px 1.25fr 1fr; min-height: 380px; }
+  .app-tree {
+    background: #211F1D;
+    border-right: 1px solid #2F2D2B;
+    padding: 12px 10px;
+    font-size: 10.5px;
+    color: #9E9891;
+  }
+  .tree-root { color: #7D7872; letter-spacing: 0.04em; font-size: 9.5px; text-transform: uppercase; padding: 0 6px 8px; }
+  .tree-row { padding: 2.5px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tree-row.dir { color: #CFC9C2; }
+  .tree-row.open { background: #322F2D; color: #F2EEE9; }
+  .tree-row .ic { color: #E2A299; margin-right: 4px; }
+  .tree-row.d2 { padding-left: 18px; }
+  .app-term {
+    padding: 16px 18px;
+    border-right: 1px solid #2F2D2B;
+    background: #1C1A18;
+    overflow: hidden;
+  }
+  .t-line { white-space: pre-wrap; }
+  .t-dim { color: #7D7872; }
+  .t-rose { color: #E2A299; }
+  .t-sage { color: #A8BDA8; }
+  .t-ink { color: #F2EEE9; }
+  .t-gap { height: 10px; }
+  .caret {
+    display: inline-block;
+    width: 7px; height: 14px;
+    background: #E2A299;
+    vertical-align: -2px;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .app-preview {
+    background: #211F1D;
+    padding: 18px 20px;
+    overflow: hidden;
+  }
+  .preview-chrome {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 9.5px;
+    color: #7D7872;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #2F2D2B;
+    margin-bottom: 14px;
+  }
+  .preview-chrome .pdot { width: 5px; height: 5px; border-radius: 50%; background: #A8BDA8; }
+  .app-preview h5 {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 17px;
+    font-weight: 480;
+    color: #F2EEE9;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .app-preview p { font-size: 10.5px; color: #9E9891; margin-bottom: 8px; line-height: 1.6; }
+  .app-preview .wikilink { color: #E2A299; border-bottom: 1px dotted rgba(226,162,153,0.4); }
+  .app-statusbar {
+    height: 26px;
+    background: #211F1D;
+    border-top: 1px solid #2F2D2B;
+    display: flex; align-items: center;
+    padding: 0 14px;
+    gap: 14px;
+    font-size: 9.5px;
+    color: #7D7872;
+    letter-spacing: 0.04em;
+  }
+  .app-statusbar .sb-right { margin-left: auto; display: flex; gap: 12px; }
+  .stage-caption {
+    margin-top: 18px;
+    text-align: center;
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.05em;
+  }
+
+  /* ─── Sections ─────────────────────────────────────────────── */
+  .sections { padding: 88px 0 0; }
+  .section {
+    position: relative;
+    padding: 72px 0;
+    border-top: 1px solid var(--edge-soft);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    gap: 64px;
+    align-items: center;
+  }
+  .section.flip { grid-template-columns: 400px minmax(0, 1fr); }
+  .section.flip .vignette { order: -1; }
+  .section.solo { display: block; max-width: 720px; }
+  .section:first-of-type { border-top: none; padding-top: 0; }
+  .section-text { min-width: 0; }
+  .section-marker {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--ink-faint);
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .section-marker .num { color: var(--ink-soft); font-weight: 600; }
+  .section-marker .pip { width: 6px; height: 6px; border-radius: 50%; background: var(--rose); opacity: 0.8; }
+  .section-marker.sage .pip { background: var(--sage); }
+  .section-marker.tan .pip { background: var(--tan); }
+  .section-marker.mauve .pip { background: var(--mauve); }
+  .section h2 {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: clamp(28px, 3.6vw, 40px);
+    font-weight: 440;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+    color: var(--ink);
+    margin-bottom: 22px;
+    max-width: 24ch;
+  }
+  .section h2 em { font-style: italic; font-weight: 400; color: var(--rose); }
+  .section p { color: var(--ink-soft); margin-bottom: 18px; max-width: 62ch; }
+  .section p strong { color: var(--ink); font-weight: 600; }
+  .section p em { color: var(--ink); font-style: italic; }
+  .lede { font-size: 18px; line-height: 1.6; color: var(--ink) !important; max-width: 56ch; margin-bottom: 24px !important; }
+
+  .section ul { margin: 0 0 22px; padding: 0; list-style: none; color: var(--ink-soft); max-width: 60ch; }
+  .section ul li { position: relative; padding-left: 22px; margin-bottom: 11px; line-height: 1.6; }
+  .section ul li::before {
+    content: "";
+    position: absolute; left: 0; top: 12px;
+    width: 8px; height: 1px;
+    background: var(--rose);
+    opacity: 0.7;
+  }
+  .section li strong { color: var(--ink); font-weight: 600; }
+
+  .section a {
+    color: var(--rose);
+    text-decoration: none;
+    background-image: linear-gradient(currentColor, currentColor);
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    background-size: 0% 1px;
+    padding-bottom: 2px;
+    transition: background-size 220ms ease;
+  }
+  .section a:hover { background-size: 100% 1px; }
+
+  code, pre, .mono { font-family: "Spline Sans Mono", ui-monospace, monospace; }
+  .section code {
+    background: var(--surface);
+    border: 1px solid var(--edge-soft);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  pre {
+    background: var(--surface-soft);
+    border: 1px solid var(--edge-soft);
+    border-radius: 10px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.7;
+    margin: 0 0 24px;
+    color: var(--ink-soft);
+  }
+  pre .c { color: var(--ink-faint); }
+  pre .ps1 { color: var(--rose); }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; color: inherit; }
+  .kbd {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    background: var(--surface);
+    border: 1px solid var(--edge);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    padding: 1px 7px;
+    color: var(--ink);
+  }
+
+  /* feature cards */
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 30px 0 8px;
+  }
+  .card {
+    background: var(--surface-soft);
+    border: 1px solid var(--edge-soft);
+    border-radius: 10px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow-card);
+    transition: transform 200ms ease, border-color 200ms ease;
+  }
+  .card:hover { transform: translateY(-2px); border-color: var(--edge); }
+  .card h3 {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 7px;
+    display: flex; align-items: center; gap: 9px;
+  }
+  .card h3 .cdot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .card p { font-size: 13px; line-height: 1.6; color: var(--ink-ghost); margin: 0; }
+  .card code { font-size: 11.5px; }
+
+  /* two-column bridge diagram */
+  .bridge {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: stretch;
+    gap: 18px;
+    margin: 30px 0 26px;
+  }
+  .bridge-node {
+    background: var(--surface-soft);
+    border: 1px solid var(--edge-soft);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .bridge-node .bn-label {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+  .bridge-node .bn-cmd {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--rose);
+    margin-bottom: 6px;
+  }
+  .bridge-node p { font-size: 12.5px; color: var(--ink-ghost); margin: 0; line-height: 1.55; }
+  .bridge-arrows {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    color: var(--ink-faint);
+    font-size: 14px;
+    display: flex; flex-direction: column; gap: 6px;
+    align-self: center;
+    text-align: center;
+  }
+
+  table { border-collapse: collapse; width: 100%; max-width: 620px; margin: 0 0 24px; font-size: 13.5px; }
+  th {
+    text-align: left;
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-faint);
+    font-weight: 500;
+    padding: 0 16px 10px 0;
+    border-bottom: 1px solid var(--edge);
+  }
+  td { padding: 10px 16px 10px 0; border-bottom: 1px solid var(--edge-soft); color: var(--ink-soft); vertical-align: top; }
+  td code { white-space: nowrap; }
+
+  /* ─── Vignettes: living mini app panels beside sections ────── */
+  .vignette {
+    position: relative;
+    background: linear-gradient(180deg, #201E1C 0%, #1C1A18 42%);
+    border: 1px solid #3A3836;
+    border-radius: 12px;
+    box-shadow: var(--shadow-app), inset 0 1px 0 rgba(255,255,255,0.045);
+    overflow: hidden;
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #CFC9C2;
+    user-select: none;
+  }
+  /* faint top sheen so the panel reads as glass, not a flat rectangle */
+  .vignette::after {
+    content: "";
+    position: absolute; inset: 0 0 auto 0; height: 40%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.022), transparent);
+    pointer-events: none;
+  }
+  .v-bar {
+    position: relative; z-index: 1;
+    height: 32px;
+    background: linear-gradient(180deg, #262320, #211F1D);
+    border-bottom: 1px solid #2F2D2B;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 12px;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    color: #7D7872;
+  }
+  .v-bar .lights { display: flex; gap: 6px; }
+  .v-bar .light { width: 9px; height: 9px; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.25); }
+
+  /* 02 · groups */
+  .v-groups { position: relative; z-index: 1; padding: 16px 14px 18px; }
+  .v-strip { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  /* live touches: active tab gets a hairline ring, group pills glow in their own color */
+  .v-strip .app-tab.active { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+  .v-strip .group-pill { box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 24%, transparent), 0 0 12px -4px currentColor; }
+  .app-tab.spawn {
+    overflow: hidden; white-space: nowrap;
+    max-width: 0; opacity: 0; padding-left: 0; padding-right: 0;
+    animation: spawnTab 7s cubic-bezier(0.2, 0.6, 0.2, 1) infinite;
+  }
+  @keyframes spawnTab {
+    0%, 38% { max-width: 0; padding-left: 0; padding-right: 0; opacity: 0; }
+    48%, 92% { max-width: 130px; padding-left: 12px; padding-right: 12px; opacity: 1; }
+    100% { max-width: 0; padding-left: 0; padding-right: 0; opacity: 0; }
+  }
+  .v-ctx {
+    margin-top: 14px;
+    background: #211F1D;
+    border: 1px solid #2F2D2B;
+    border-radius: 8px;
+    padding: 11px 13px;
+    font-size: 10px;
+    color: #9E9891;
+    line-height: 1.65;
+  }
+  .v-ctx .vk {
+    display: block;
+    font-size: 8.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #7D7872;
+    margin-bottom: 7px;
+  }
+  .v-ctx .caret { width: 5px; height: 11px; vertical-align: -1px; }
+
+  /* 03 · tiling */
+  .v-stage { position: relative; height: 250px; margin: 8px; }
+  .v-pane {
+    position: absolute;
+    background: #211F1D;
+    border: 1px solid #3A3836;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .v-pane .ph {
+    height: 17px;
+    background: #2A2826;
+    border-bottom: 1px solid #2F2D2B;
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    color: #9E9891;
+    display: flex; align-items: center; gap: 5px;
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+  .v-pane .pdot2 { width: 4px; height: 4px; border-radius: 50%; flex: none; }
+  .v-pane .pl { height: 3px; border-radius: 2px; background: #322F2D; margin: 7px 8px 0; }
+  .vpA { animation: vpaneA 11s cubic-bezier(0.3, 0.7, 0.2, 1) infinite; border-color: #46413B; background: linear-gradient(180deg, #232120, #1F1D1B); }
+  .vpB { animation: vpaneB 11s cubic-bezier(0.3, 0.7, 0.2, 1) infinite; }
+  .vpC { animation: vpaneC 11s cubic-bezier(0.3, 0.7, 0.2, 1) infinite; }
+  @keyframes vpaneA {
+    0%, 24% { inset: 0 0 0 0; }
+    32%, 90% { inset: 0 51% 0 0; }
+    98%, 100% { inset: 0 0 0 0; }
+  }
+  @keyframes vpaneB {
+    0%, 24% { inset: 0 0 0 101%; opacity: 0; }
+    25% { opacity: 1; }
+    32%, 58% { inset: 0 0 0 51%; opacity: 1; }
+    66%, 88% { inset: 0 0 52% 51%; opacity: 1; }
+    96%, 100% { inset: 0 0 0 101%; opacity: 0; }
+  }
+  @keyframes vpaneC {
+    0%, 58% { inset: 101% 0 0 51%; opacity: 0; }
+    59% { opacity: 1; }
+    66%, 86% { inset: 50% 0 0 51%; opacity: 1; }
+    94%, 100% { inset: 101% 0 0 51%; opacity: 0; }
+  }
+  .v-drop {
+    position: absolute;
+    border: 1.5px dashed rgba(226, 162, 153, 0.7);
+    border-radius: 6px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .vdR { inset: 0 0 0 51%; animation: vdropR 11s infinite; }
+  .vdQ { inset: 50% 0 0 51%; animation: vdropQ 11s infinite; }
+  @keyframes vdropR { 0%, 16% { opacity: 0; } 20%, 27% { opacity: 1; } 31%, 100% { opacity: 0; } }
+  @keyframes vdropQ { 0%, 52% { opacity: 0; } 56%, 62% { opacity: 1; } 65%, 100% { opacity: 0; } }
+
+  /* 04 · preview/editor */
+  .v-split { display: grid; grid-template-columns: 1fr 1.1fr; min-height: 190px; }
+  .v-ed {
+    padding: 13px 12px;
+    border-right: 1px solid #2F2D2B;
+    font-size: 9.5px;
+    color: #9E9891;
+    line-height: 1.75;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .v-ed .ln { color: #55504B; margin-right: 8px; }
+  .v-md { padding: 14px 16px; }
+  .v-md h6 {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 14px;
+    font-weight: 480;
+    color: #F2EEE9;
+    margin-bottom: 7px;
+    letter-spacing: -0.01em;
+  }
+  .v-md p { font-size: 9.5px; color: #9E9891; line-height: 1.65; margin-bottom: 7px; }
+  .v-md .wikilink { color: #E2A299; border-bottom: 1px dotted rgba(226, 162, 153, 0.4); }
+  .v-toast {
+    position: absolute;
+    bottom: 10px; right: 10px;
+    background: #322F2D;
+    border: 1px solid #3A3836;
+    border-radius: 5px;
+    color: #A8BDA8;
+    font-size: 9px;
+    padding: 3px 9px;
+    opacity: 0;
+    animation: vtoast 6s infinite;
+  }
+  @keyframes vtoast {
+    0%, 40% { opacity: 0; transform: translateY(4px); }
+    48%, 72% { opacity: 1; transform: none; }
+    80%, 100% { opacity: 0; }
+  }
+
+  /* 06 · log ticker */
+  .v-log { position: relative; z-index: 1; padding: 14px 16px 18px; font-size: 9.5px; line-height: 2.1; color: #837C75; }
+  .v-log .ll { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
+  .v-log .l1 { animation: vll1 10s infinite; }
+  .v-log .l2 { animation: vll2 10s infinite; }
+  .v-log .l3 { animation: vll3 10s infinite; }
+  .v-log .l4 { animation: vll4 10s infinite; }
+  .v-log .l5 { animation: vll5 10s infinite; }
+  .v-log .l6 { animation: vll6 10s infinite; }
+  @keyframes vll1 { 0% { opacity: 0; } 6%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  @keyframes vll2 { 0%, 14% { opacity: 0; } 20%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  @keyframes vll3 { 0%, 28% { opacity: 0; } 34%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  @keyframes vll4 { 0%, 42% { opacity: 0; } 48%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  @keyframes vll5 { 0%, 56% { opacity: 0; } 62%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  @keyframes vll6 { 0%, 70% { opacity: 0; } 76%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+
+  /* 07 · architecture */
+  .v-arch { padding: 18px 16px; display: flex; flex-direction: column; }
+  .v-arch .ar {
+    background: #211F1D;
+    border: 1px solid #3A3836;
+    border-radius: 7px;
+    padding: 9px 13px;
+    font-size: 10px;
+    color: #CFC9C2;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .v-arch .ar .tag {
+    font-size: 8px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #7D7872;
+    flex: none;
+  }
+  .v-arch .ar.shim { border-color: rgba(226, 162, 153, 0.4); color: #E2A299; }
+  .v-arch .ar.shim .tag { color: rgba(226, 162, 153, 0.7); }
+  .v-link { text-align: center; color: #55504B; font-size: 10px; line-height: 1.5; }
+
+  /* screenshot slots, swap a .vignette for a .shot when real captures land */
+  .shot { border-radius: 12px; border: 1px solid var(--edge); box-shadow: var(--shadow-app); overflow: hidden; }
+  .shot img { display: block; width: 100%; }
+  /* hero only: a live blinking caret sits over the terminal prompt in the screenshot */
+  .shot-media { position: relative; display: block; line-height: 0; }
+  .shot-media img { display: block; width: 100%; }
+  .hero-caret {
+    position: absolute;
+    left: 19.5%; top: 26.2%;
+    width: 0.58%; height: 1.8%;
+    background: #E2A299;
+    border-radius: 1px;
+    box-shadow: 0 0 9px -1px rgba(226,162,153,0.65);
+    animation: blink 1.1s steps(1) infinite;
+    pointer-events: none;
+  }
+
+  /* ─── Footer ───────────────────────────────────────────────── */
+  footer {
+    margin-top: 120px;
+    background: #141210;
+    border-top: 1px solid #2F2D2B;
+    position: relative;
+    z-index: 2;
+  }
+  .footer-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 72px 28px 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 40px;
+    flex-wrap: wrap;
+  }
+  /* one framed lockup: tile + wordmark share a concentric rounded frame
+     (outer radius = tile radius + padding), text column pinned to tile height */
+  .footer-brand {
+    display: inline-flex; align-items: center; gap: 13px;
+    padding: 6px 20px 6px 6px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.025);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .footer-tile {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: #0E0C0A;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+    flex: none;
+  }
+  .footer-tile { background-image: var(--mark); background-size: 24px 24px; background-position: center; background-repeat: no-repeat; }
+  .footer-brand .fb-text {
+    height: 40px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .footer-brand .fb-name {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 20px;
+    line-height: 1.05;
+    color: #F2EEE9;
+    letter-spacing: -0.01em;
+  }
+  .footer-brand .fb-sub {
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 9px;
+    color: #7D7872;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+  .footer-links {
+    display: flex; gap: 28px;
+    font-family: "Spline Sans Mono", ui-monospace, monospace;
+    font-size: 12px;
+  }
+  .footer-links a { color: #9E9891; text-decoration: none; transition: color 140ms ease; }
+  .footer-links a:hover { color: #E2A299; }
+  /* scroll reveal */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity 700ms cubic-bezier(0.2,0.6,0.2,1), transform 700ms cubic-bezier(0.2,0.6,0.2,1); }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (max-width: 860px) {
+    .app-body { grid-template-columns: 1fr 1fr; }
+    .app-tree { display: none; }
+    .section, .section.flip { display: block; }
+    .vignette { margin-top: 40px; max-width: 480px; }
+  }
+  @media (max-width: 680px) {
+    .cards { grid-template-columns: 1fr; }
+    .bridge { grid-template-columns: 1fr; }
+    .bridge-arrows { flex-direction: row; justify-content: center; transform: rotate(90deg); height: 28px; }
+    .app-body { grid-template-columns: 1fr; }
+    .app-preview { display: none; }
+    .stage::before { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<nav class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-mark"></span>
+    <span class="topbar-title"><strong>spike</strong> · stay sharp</span>
+  </div>
+  <div class="topbar-right">
+    <a class="iconbtn" href="https://github.com/annamarie-kelly/spike">github ↗</a>
+    <button class="iconbtn" id="themeToggle" aria-label="Toggle theme">☾ theme</button>
+  </div>
+</nav>
+
+<main class="shell">
+
+  <!-- ─── Hero ─────────────────────────────────────────────── -->
+  <header class="hero">
+    <div class="hero-mark"><img src="data:image/png;base64,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" alt="The Spike mark: a four-pointed star" /></div>
+    <div class="hero-eyebrow">
+      <span class="dot"></span> Open source <span class="sep">·</span> macOS <span class="sep">·</span> MIT
+    </div>
+    <h1>Where everything you make <em>happens.</em></h1>
+    <p class="hero-tagline">
+      A native shell around Claude Code and Codex. Terminal, tree, live preview, wrapped around the agent doing the work:
+      point it, watch it build, see the result, steer.
+      <strong>Not a coding tool. For everything you make.</strong>
+    </p>
+    <div class="hero-actions">
+      <a class="cta dl-btn" data-dl-mac href="https://github.com/annamarie-kelly/spike/releases/latest"><svg class="apple" viewBox="0 0 814 1000" aria-hidden="true"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 99.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"/></svg>Download for Mac <span class="qual">Apple silicon</span></a>
+    </div>
+    <p class="hero-note">Requires <a href="https://www.anthropic.com/claude-code">Claude Code</a> or <a href="https://github.com/openai/codex">Codex</a> on your PATH.</p>
+    <div class="hero-stats" aria-label="Project facts">
+      <div class="stat">
+        <span class="stat-k">version</span>
+        <span class="stat-v" data-stat="version">v0.3.0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-k">stack</span>
+        <span class="stat-v" data-stat="lang">Rust · TypeScript</span>
+      </div>
+      <div class="stat">
+        <span class="stat-k">license</span>
+        <span class="stat-v" data-stat="license">MIT</span>
+      </div>
+      <div class="stat">
+        <span class="stat-k">platform</span>
+        <span class="stat-v">macOS</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── App mockup ───────────────────────────────────────── -->
+  <!-- SCREENSHOT SLOT · hero: replace the CSS mockup below with
+       <div class="stage"><figure class="shot"><img src="assets/shots/hero.png" alt="The Spike window" /></figure></div>
+       Drop file at docs/assets/shots/hero.png (full window, dark theme, ~2200px wide). -->
+  <div class="stage" data-shot="assets/shots/hero.png" data-shot-alt="The Spike window: tab groups in the tab strip, a file tree, an agent terminal, and a rendered markdown preview tiled side by side." data-shot-cap="The Spike window, tab groups, tree, an agent session, and a live preview, tiled." role="img" aria-label="Mockup of the Spike window: tab groups in the tab strip, a file tree, an agent terminal, and a rendered markdown preview tiled side by side.">
+    <div class="app">
+      <div class="app-titlebar">
+        <div class="lights"><span class="light r"></span><span class="light y"></span><span class="light g"></span></div>
+        <span class="app-name">Spike</span>
+        <span class="folder-pick">~/dev/spike <span class="chev">⌄</span></span>
+      </div>
+      <div class="app-tabrow">
+        <div class="tabstrip">
+          <span class="group-pill sage"><span class="gdot"></span>garden</span>
+          <span class="app-tab">triage</span>
+          <span class="group-pill rose"><span class="gdot"></span>spike</span>
+          <span class="app-tab active">layout engine <span class="tab-x">×</span></span>
+          <span class="app-tab">drag &amp; drop</span>
+          <span class="app-tab"><span class="plus">+</span></span>
+        </div>
+      </div>
+      <div class="app-body">
+        <div class="app-tree">
+          <div class="tree-head">spike <span class="tree-add">+</span></div>
+          <div class="tree-row dir">▾ src <span class="tcount">32</span></div>
+          <div class="tree-row dir d2">▾ web <span class="tcount">12</span></div>
+          <div class="tree-row d2 open" style="padding-left:30px;"><span class="ic">‹›</span>app.ts</div>
+          <div class="tree-row d2" style="padding-left:30px;"><span class="ic">‹›</span>layout.ts</div>
+          <div class="tree-row d2" style="padding-left:30px;"><span class="ic">‹›</span>ipc.ts</div>
+          <div class="tree-row dir">▸ src-tauri <span class="tcount">18</span></div>
+          <div class="tree-row dir">▸ bin <span class="tcount">4</span></div>
+          <div class="tree-row">README.md</div>
+          <div class="tree-row">package.json</div>
+        </div>
+        <div class="app-term">
+          <div class="t-line t-dim">~/dev/spike</div>
+          <div class="t-line"><span class="t-rose">❯</span> <span class="t-ink">make the splitter remember its</span></div>
+          <div class="t-line"><span class="t-ink">ratio when a pane is stacked</span></div>
+          <div class="t-gap"></div>
+          <div class="t-line t-sage">● Reading src/web/layout.ts…</div>
+          <div class="t-line t-sage">● Edited splitTree.insert()</div>
+          <div class="t-line t-sage">● Ran 14 layout tests, all pass</div>
+          <div class="t-gap"></div>
+          <div class="t-line t-dim">Opening the diff in the preview…</div>
+          <div class="t-line"><span class="t-dim">$</span> <span class="t-ink">spike open src/web/layout.ts</span></div>
+          <div class="t-gap"></div>
+          <div class="t-line"><span class="t-rose">❯</span> <span class="caret"></span></div>
+        </div>
+        <div class="app-preview">
+          <div class="preview-chrome"><span class="pdot"></span> preview · layout.ts · saved<span class="pv-tools"><span class="pv-ic">&lt;/&gt;</span><svg class="pv-eye" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z"/><circle cx="8" cy="8" r="1.6"/></svg></span></div>
+          <h5>The layout is a split tree.</h5>
+          <p>Every pane is a leaf. A drop on an edge splits the node; a drop on the center stacks it. The renderer re-parents live DOM nodes, so <span class="wikilink">xterm scrollback</span> and editor state survive any drag.</p>
+          <p>Ratios persist per node, close the app mid-arrangement and it comes back exactly as you left it.</p>
+        </div>
+      </div>
+      <div class="app-statusbar">
+        <span>⌘\ sidebar</span><span>⌘, settings</span>
+        <span class="sb-right"><span>:7878 bridge</span><span>watching 142 files</span></span>
+      </div>
+    </div>
+    <div class="stage-caption">the agent in the center · just enough editor around it to steer</div>
+  </div>
+
+  <!-- ─── Sections ─────────────────────────────────────────── -->
+  <div class="sections">
+
+    <section class="section solo reveal" id="everything">
+      <div class="section-marker mauve"><span class="num">01</span><span class="pip"></span>Not a coding tool</div>
+      <h2>Built for <em>all</em> your work.</h2>
+      <p class="lede">Zed, Cursor, and VS Code are coding tools. Spike is where everything happens: essays, specs, research, design, data, landing pages, this page included.</p>
+      <p>The interface to all of it is the same: an agent, a file, a preview, fast iteration. The code IDEs are aimed at code; Spike is aimed at the work, whatever it happens to be.</p>
+    </section>
+
+    <section class="section reveal" id="terminals">
+      <div class="section-text">
+      <div class="section-marker sage"><span class="num">02</span><span class="pip"></span>Terminals</div>
+      <h2>Every tab is a session. Groups are <em>durable workspaces.</em></h2>
+      <p class="lede">When the agent writes the output, the thing you manage isn't files, it's contexts. So a tab isn't a document, it's a live session, and groups of sessions are the workspaces you keep coming back to.</p>
+      <p>Each tab is its own agent session, Claude Code or OpenAI Codex, with a real PTY underneath. Add with <span class="kbd">+</span>, rename anytime, close with <span class="kbd">×</span>. Then organize them the way a browser organizes tabs:</p>
+      <ul>
+        <li><strong>Chrome-style tab groups.</strong> Group sessions, name them, give each a color, collapse and expand.</li>
+        <li><strong>Context that travels.</strong> Each group carries its own context prompt, injected into every session that spawns inside it. A "reviews" group can know your review checklist; a project group knows its conventions.</li>
+        <li><strong>Any folder.</strong> Pick a folder with the native dialog, and the tree re-roots and new terminals spawn there. Spike is not tied to any one project.</li>
+      </ul>
+      </div>
+      <!-- SCREENSHOT SLOT · swap this vignette for: <figure class="shot"><img src="assets/shots/terminals.png" alt="" /></figure> · terminals.png  (tab strip with 2+ colored groups visible) -->
+      <aside class="vignette" aria-hidden="true" data-shot="assets/shots/terminals.png" data-shot-cap="Tab groups carry their own context, color them, collapse them, spawn sessions inside." data-shot-alt="Spike session tab strip with two colored, named tab groups.">
+        <div class="v-bar"><div class="lights"><span class="light r"></span><span class="light y"></span><span class="light g"></span></div><span>sessions</span></div>
+        <div class="v-groups">
+          <div class="v-strip">
+            <span class="group-pill sage"><span class="gdot"></span>garden</span>
+            <span class="app-tab">triage</span>
+            <span class="group-pill rose"><span class="gdot"></span>spike</span>
+            <span class="app-tab active">layout engine <span class="tab-x">×</span></span>
+            <span class="app-tab spawn">drag &amp; drop</span>
+            <span class="app-tab">+</span>
+          </div>
+          <div class="v-ctx">
+            <span class="vk">group context · spike</span>
+            You're working on Spike, a Tauri shell for Claude Code and Codex. TypeScript strict, no UI frameworks. Run the layout tests before declaring done.<span class="caret"></span>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section flip reveal" id="preview">
+      <div class="section-text">
+      <div class="section-marker"><span class="num">03</span><span class="pip"></span>Preview</div>
+      <h2>A preview that <em>edits.</em></h2>
+      <p class="lede">The loop is see → react → refine → reproduce, and the preview is where it closes. It isn't a coding convenience, it's the feedback surface. The question stops being "is this line correct" and becomes "did the thing get built, and does it look right."</p>
+      <p>Reading code, you can judge a lot from the source. Reading the agent's output, you have to look at the result, so the preview here is load-bearing, not an afterthought.</p>
+      <p>Markdown renders with clickable wikilinks. HTML, CSV, JSON, images, PDF, and media all display in place. And behind every text file sits a syntax-highlighted editor with <span class="kbd">⌘S</span> save, and the preview pane is also where you fix the thing you're looking at.</p>
+      <p>Screenshots flow the other way: drag an image onto a terminal, even the floating thumbnail right after <span class="kbd">⌘⇧4</span>, and it lands in the prompt as the agent's own image attachment. Other files drop their path, same as dragging from the tree.</p>
+      </div>
+      <!-- SCREENSHOT SLOT · swap this vignette for: <figure class="shot"><img src="assets/shots/preview.png" alt="" /></figure> · preview.png    (markdown or HTML rendering beside a terminal) -->
+      <aside class="vignette" aria-hidden="true" data-shot="assets/shots/preview.png" data-shot-cap="Edit on the left, rendered on the right. ⌘S saves the file you're looking at." data-shot-alt="Spike preview pane: markdown editor beside its live render.">
+        <div class="v-bar"><div class="lights"><span class="light r"></span><span class="light y"></span><span class="light g"></span></div><span>README.md · editor + render</span></div>
+        <div class="v-split">
+          <div class="v-ed">
+            <div><span class="ln">1</span><span class="t-rose"># spike</span></div>
+            <div><span class="ln">2</span></div>
+            <div><span class="ln">3</span>A native shell around</div>
+            <div><span class="ln">4</span>[Claude Code](https://…) or Codex.</div>
+            <div><span class="ln">5</span></div>
+            <div><span class="ln">6</span>The terminal is still</div>
+            <div><span class="ln">7</span>the chat.<span class="caret"></span></div>
+          </div>
+          <div class="v-md">
+            <h6>spike</h6>
+            <p>A native shell around <span class="wikilink">Claude Code</span> or Codex.</p>
+            <p>The terminal is still the chat. Spike just makes it a place you want to live.</p>
+          </div>
+        </div>
+        <div class="v-toast">saved · ⌘S</div>
+      </aside>
+    </section>
+
+    <section class="section reveal" id="log">
+      <div class="section-text">
+      <div class="section-marker mauve"><span class="num">04</span><span class="pip"></span>The log</div>
+      <h2>Spike records. <em>You</em> ask the questions.</h2>
+      <p>An append-only action log lives at <code>~/.spike/logs/&lt;day&gt;.jsonl</code>, one JSON event per line, server-stamped: <code>tab_spawn</code>, <code>file_open</code>, <code>group_assign</code>, <code>file_save</code>, <code>spike_open</code>. It even records <code>file_change</code> for edits that happen outside Spike's own UI, by promoting what the file watcher already sees.</p>
+      <p>Most tools want to be smart at you. Spike does none of that on purpose: the log is a record, and the questions are yours. Open a session and say <em>"read my spike log and tell me how to tighten my workflow"</em>, write a retro, audit your own habits. The intelligence layer is your agent plus your curiosity, not a suggestion engine baked into the tool.</p>
+      </div>
+      <!-- SCREENSHOT SLOT · swap this vignette for: <figure class="shot"><img src="assets/shots/log.png" alt="" /></figure> · log.png        (a jsonl log open in the preview pane) -->
+      <aside class="vignette" aria-hidden="true" data-shot="assets/shots/log.png" data-shot-cap="One JSON event per line, server-stamped. Yours to query however you like." data-shot-alt="A Spike action log (jsonl) open in the preview pane.">
+        <div class="v-bar"><div class="lights"><span class="light r"></span><span class="light y"></span><span class="light g"></span></div><span>~/.spike/logs/today.jsonl</span></div>
+        <div class="v-log">
+          <div class="ll l1">{"t":"09:14:02","e":"<span class="t-rose">tab_spawn</span>","group":"spike"}</div>
+          <div class="ll l2">{"t":"09:14:31","e":"<span class="t-sage">file_open</span>","p":"src/web/app.ts"}</div>
+          <div class="ll l3">{"t":"09:17:55","e":"<span class="t-sage">file_change</span>","by":"agent"}</div>
+          <div class="ll l4">{"t":"09:18:03","e":"<span class="t-rose">spike_open</span>","p":"docs/index.html"}</div>
+          <div class="ll l5">{"t":"09:21:48","e":"<span class="t-sage">file_save</span>","p":"layout.ts"}</div>
+          <div class="ll l6">{"t":"09:24:10","e":"<span class="t-rose">group_assign</span>","g":"garden"}</div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section solo reveal" id="bridge">
+      <div class="section-marker sage"><span class="num">05</span><span class="pip"></span>The bridge</div>
+      <h2>Two commands connect the agent to the glass.</h2>
+      <p class="lede">The agent is a terminal program Spike doesn't own, Claude Code or OpenAI Codex, your pick. The bridge is how it and the UI stay in sync anyway: two small commands on the embedded terminal's PATH, one pushing, one pulling.</p>
+      <div class="bridge">
+        <div class="bridge-node">
+          <div class="bn-label">agent → ui</div>
+          <div class="bn-cmd">spike open &lt;path&gt;</div>
+          <p>Opens a file into the preview (or re-roots the tree) instead of summarizing it back at you in prose.</p>
+        </div>
+        <div class="bridge-arrows"><span>⟶</span><span>⟵</span></div>
+        <div class="bridge-node">
+          <div class="bn-label">ui → agent</div>
+          <div class="bn-cmd">spike context</div>
+          <p>Reports what you're looking at, open file, tree selection, project root, so "this file" resolves to a real path without asking.</p>
+        </div>
+      </div>
+      <p>The page reports its focus to a tiny localhost listener on every change, and <code>spike context</code> reads it back, paths only, never contents, so the agent opens the file itself when it needs the bytes. An editor with a built-in assistant can wire this up internally; the seam here is open, so it works for an agent you brought yourself.</p>
+    </section>
+
+    <section class="section flip reveal" id="tiling">
+      <div class="section-text">
+      <div class="section-marker tan"><span class="num">06</span><span class="pip"></span>Tiling</div>
+      <h2>Grab a pane. Drop it on an edge. The layout is yours.</h2>
+      <p>Seeing the work means putting the pieces side by side, the session, the file, the result, and arranging them by hand. The layout engine underneath is a plain recursive split tree, unit-tested and framework-free. What that buys you in practice:</p>
+      <div class="cards">
+        <div class="card">
+          <h3><span class="cdot" style="background:var(--rose)"></span>Drag to split</h3>
+          <p>Grab a pane by its header, drop it on another pane's edge to split, or its center to stack.</p>
+        </div>
+        <div class="card">
+          <h3><span class="cdot" style="background:var(--sage)"></span>Tear off a tab</h3>
+          <p>Drag a terminal tab off the strip and that session gets its own pane.</p>
+        </div>
+        <div class="card">
+          <h3><span class="cdot" style="background:var(--tan)"></span>Files dock too</h3>
+          <p>Drag a file from the tree onto an edge and the preview opens right there.</p>
+        </div>
+        <div class="card">
+          <h3><span class="cdot" style="background:var(--mauve)"></span>State survives</h3>
+          <p>The renderer re-parents live DOM nodes, so xterm scrollback and editor state survive any drag. The layout persists across launches.</p>
+        </div>
+      </div>
+      </div>
+      <!-- SCREENSHOT SLOT · swap this vignette for: <figure class="shot"><img src="assets/shots/tiling.png" alt="" /></figure> · tiling.png     (mid-drag, drop-zone highlight visible) -->
+      <aside class="vignette" aria-hidden="true" data-shot="assets/shots/tiling.png" data-shot-cap="Drop a pane on an edge to split, on the center to stack. State survives the move." data-shot-alt="Spike tiling layout mid-drag with a drop-zone highlighted.">
+        <div class="v-bar"><div class="lights"><span class="light r"></span><span class="light y"></span><span class="light g"></span></div><span>drag a pane · drop it on an edge</span></div>
+        <div class="v-stage">
+          <div class="v-pane vpA">
+            <div class="ph"><span class="pdot2" style="background:#E2A299"></span>terminal · main</div>
+            <div class="pl" style="width:62%"></div><div class="pl" style="width:40%"></div><div class="pl" style="width:74%"></div><div class="pl" style="width:33%"></div>
+          </div>
+          <div class="v-pane vpB">
+            <div class="ph"><span class="pdot2" style="background:#A8BDA8"></span>preview</div>
+            <div class="pl" style="width:70%"></div><div class="pl" style="width:55%"></div>
+          </div>
+          <div class="v-pane vpC">
+            <div class="ph"><span class="pdot2" style="background:#C7B97F"></span>editor</div>
+            <div class="pl" style="width:48%"></div>
+          </div>
+          <div class="v-drop vdR"></div>
+          <div class="v-drop vdQ"></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section reveal" id="small">
+      <div class="section-text">
+      <div class="section-marker mauve"><span class="num">07</span><span class="pip"></span>Under the hood</div>
+      <h2>Deliberately small.</h2>
+      <ul>
+        <li><strong>Backend: Rust.</strong> A real PTY per terminal via <code>portable-pty</code>, filesystem ops, a file watcher, and a tiny localhost listener for the CLI bridge.</li>
+        <li><strong>Frontend: plain DOM.</strong> <code>xterm.js</code> for the terminals, no UI framework for everything else. One shim (<code>ipc.ts</code>) is the only file that knows Tauri exists.</li>
+        <li><strong>Builds in milliseconds.</strong> esbuild bundles the frontend; type-checking is a separate, advisory gate that never blocks a build.</li>
+        <li><strong>Layout: a recursive split tree.</strong> Unit-tested, framework-free, persists across launches.</li>
+      </ul>
+      </div>
+      <!-- SCREENSHOT SLOT · swap this vignette for: <figure class="shot"><img src="assets/shots/arch.png" alt="" /></figure> · arch.png       (optional; the CSS diagram may stay) -->
+      <aside class="vignette" aria-hidden="true" data-shot="assets/shots/arch.png" data-shot-cap="The whole stack: plain DOM over a Rust core, one shim between them." data-shot-alt="Spike architecture diagram: web layer, ipc shim, native Rust core.">
+        <div class="v-bar"><div class="lights"><span class="light r"></span><span class="light y"></span><span class="light g"></span></div><span>the whole stack</span></div>
+        <div class="v-arch">
+          <div class="ar"><span>xterm.js · plain DOM · esbuild</span><span class="tag">web</span></div>
+          <div class="v-link">│</div>
+          <div class="ar shim"><span>ipc.ts, the only file that knows Tauri exists</span><span class="tag">shim</span></div>
+          <div class="v-link">│</div>
+          <div class="ar"><span>Rust · portable-pty · fs watcher · :7878</span><span class="tag">native</span></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section solo reveal" id="run">
+      <div class="section-marker"><span class="num">08</span><span class="pip"></span>Run it</div>
+      <h2>Download, drag, launch.</h2>
+      <p>Grab the signed <code>.dmg</code>, drag Spike to Applications, open it. It's notarized by Apple, so no Gatekeeper warning and no toolchain to install. You'll need <a href="https://www.anthropic.com/claude-code">Claude Code</a> or <a href="https://github.com/openai/codex">OpenAI Codex</a> on your PATH to use it. (Spike auto-detects both, pick the default in Settings, or per-tab from the <span class="kbd">+</span> launcher.)</p>
+      <p><a class="cta dl-btn" data-dl-mac href="https://github.com/annamarie-kelly/spike/releases/latest"><svg class="apple" viewBox="0 0 814 1000" aria-hidden="true"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 99.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"/></svg>Download for Mac <span class="qual">Apple silicon</span></a></p>
+
+      <h3>Build from source</h3>
+      <p>Prefer to build it yourself? Requires Node 18+ and the <a href="https://rustup.rs">Rust toolchain</a>.</p>
+      <pre><code><span class="ps1">❯</span> git clone https://github.com/annamarie-kelly/spike.git
+<span class="ps1">❯</span> cd spike
+<span class="ps1">❯</span> npm install
+<span class="ps1">❯</span> npm run dev:tauri    <span class="c"># build + launch the app</span></code></pre>
+      <p>To install it as a real app, builds a release bundle and copies it to <code>/Applications</code>:</p>
+      <pre><code><span class="ps1">❯</span> npm run install:app</code></pre>
+      <table>
+        <thead><tr><th>Variable</th><th>Default</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>SPIKE_CMD</code></td><td><code>claude</code></td><td>What each terminal runs (<code>codex</code> or <code>zsh</code> also work; overridden by the engine choice in Settings)</td></tr>
+          <tr><td><code>SPIKE_REPO_DIR</code></td><td>auto-detected</td><td>Where to find <code>bin/</code> + <code>shims/</code></td></tr>
+        </tbody>
+      </table>
+      <p>Status: early but lived-in, it's the daily driver it was built to be. Terminals, groups, the tiling layout, the preview/editor, settings, and the agent bridge all work today. macOS only for now.</p>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <span class="footer-tile"></span>
+      <div class="fb-text">
+        <div class="fb-name">spike</div>
+        <div class="fb-sub">stay sharp</div>
+      </div>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/annamarie-kelly/spike">GitHub</a>
+      <a href="#run">Install</a>
+      <a href="https://github.com/annamarie-kelly/spike/blob/main/LICENSE">MIT License</a>
+      <a href="https://annamarie-kelly.github.io/loops-os/">Loops OS</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Theme toggle, persisted.
+  const root = document.documentElement;
+  const toggle = document.getElementById('themeToggle');
+  const saved = localStorage.getItem('spike-theme');
+  if (saved) root.dataset.theme = saved;
+  const setLabel = () => { toggle.textContent = root.dataset.theme === 'dark' ? '☀ theme' : '☾ theme'; };
+  setLabel();
+  toggle.addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('spike-theme', root.dataset.theme);
+    setLabel();
+  });
+
+  // Scroll progress.
+  const bar = document.getElementById('progress');
+  addEventListener('scroll', () => {
+    const h = document.documentElement;
+    const max = h.scrollHeight - h.clientHeight;
+    bar.style.transform = `scaleX(${max > 0 ? h.scrollTop / max : 0})`;
+  }, { passive: true });
+
+  // Section reveals. IntersectionObserver is the primary path. Inside a framed
+  // preview (Spike's sandboxed srcdoc iframe, or any embed) the observer's
+  // implicit-root math doesn't track the inner scroll, so sections can stay
+  // stuck at opacity:0 below the fold. When we're framed, add a scroll-driven
+  // getBoundingClientRect fallback, plus a last-resort flush if scroll never
+  // even fires — so content is never trapped hidden. Top-level (the live site)
+  // is untouched and keeps pure-IO staged reveals.
+  const reveals = [...document.querySelectorAll('.reveal')];
+  const reveal = (el) => el.classList.add('in');
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { reveal(e.target); io.unobserve(e.target); }
+  }, { threshold: 0.12 });
+  reveals.forEach((el) => io.observe(el));
+  if (window.top !== window.self) {
+    let scrolled = false;
+    const sweep = () => { for (const el of reveals) if (!el.classList.contains('in') && el.getBoundingClientRect().top < innerHeight * 0.92) reveal(el); };
+    addEventListener('scroll', () => { scrolled = true; sweep(); }, { passive: true });
+    addEventListener('resize', sweep);
+    sweep();
+    // dead scroll context (no scroll event ever fires) → flush so it's not blank
+    setTimeout(() => { if (!scrolled) reveals.forEach(reveal); }, 1800);
+  }
+
+  // Clone line: click to copy, with a brief confirmation.
+  const clone = document.querySelector('.clone-line');
+  if (clone) {
+    const REPO = 'https://github.com/annamarie-kelly/spike.git';
+    clone.style.cursor = 'pointer';
+    clone.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText('git clone ' + REPO);
+        clone.classList.add('copied');
+        clearTimeout(clone._t);
+        clone._t = setTimeout(() => clone.classList.remove('copied'), 1400);
+      } catch (e) {}
+    });
+  }
+
+  // Project facts: pull live values from the GitHub API (public, CORS-ok, no token).
+  // Falls back silently to the stubbed markup values. Wire a token-backed build step
+  // later if the 60/hr unauthenticated limit ever bites.
+  (async () => {
+    const REPO = 'annamarie-kelly/spike';
+    const set = (k, v) => { const el = document.querySelector('[data-stat="' + k + '"]'); if (el && v != null && v !== '') el.textContent = v; };
+    try {
+      const r = await fetch('https://api.github.com/repos/' + REPO);
+      if (r.ok) {
+        const d = await r.json();
+        if (d.license && d.license.spdx_id && d.license.spdx_id !== 'NOASSERTION') set('license', d.license.spdx_id);
+        if (d.language) set('lang', d.language);
+      }
+    } catch (e) {}
+    try {
+      const rel = await fetch('https://api.github.com/repos/' + REPO + '/releases/latest');
+      if (rel.ok) {
+        const d = await rel.json();
+        if (d.tag_name) set('version', d.tag_name);
+        // Point every Download button at the latest .dmg asset so the link
+        // self-updates each release (the static href falls back to the release page).
+        const dmg = (d.assets || []).find(a => a.name.endsWith('.dmg'));
+        if (dmg) document.querySelectorAll('[data-dl-mac]').forEach(a => { a.href = dmg.browser_download_url; });
+      }
+    } catch (e) {}
+  })();
+
+  // Screenshots: auto-upgrade a CSS mockup to a real capture the moment the asset exists.
+  // Drop a file at the data-shot path (e.g. assets/shots/terminals.png) and it swaps in on next load.
+  // no broken images in the meantime. Remove a slot's data-shot to keep the mockup permanently.
+  document.querySelectorAll('[data-shot]').forEach((slot) => {
+    const src = slot.getAttribute('data-shot');
+    if (!src) return;
+    const probe = new Image();
+    probe.onload = () => {
+      const fig = document.createElement('figure');
+      fig.className = 'shot';
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = slot.getAttribute('data-shot-alt') || '';
+      img.loading = 'lazy';
+      const cap = slot.getAttribute('data-shot-cap');
+      const fc = cap ? document.createElement('figcaption') : null;
+      if (fc) fc.textContent = cap;
+      // Preserve the hero stage's outer spacing by swapping in place.
+      if (slot.classList.contains('stage')) {
+        // wrap the image so a blinking caret can sit over the terminal prompt
+        const media = document.createElement('div');
+        media.className = 'shot-media';
+        media.appendChild(img);
+        const caret = document.createElement('span');
+        caret.className = 'hero-caret';
+        caret.setAttribute('aria-hidden', 'true');
+        media.appendChild(caret);
+        fig.appendChild(media);
+        const wrap = document.createElement('div');
+        wrap.className = 'stage';
+        wrap.appendChild(fig);
+        if (fc) wrap.appendChild(fc);   // caption sits below the window frame, not inside it
+        slot.replaceWith(wrap);
+      } else {
+        fig.appendChild(img);
+        if (fc) fig.appendChild(fc);
+        slot.replaceWith(fig);
+      }
+    };
+    probe.src = src;
+  });
+</script>
+
+</body>
+</html>

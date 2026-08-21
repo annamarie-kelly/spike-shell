@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""
+codex-hook-install — register Spike's Codex agent-event hook + seed its trust.
+
+Invoked by shims/codex once per per-tab CODEX_HOME setup (alongside the auth
+symlink + AGENTS.md write). A separate script (not inline in the shim) so it is
+directly unit-testable — see test/codex-hook-install.test.mjs.
+
+    codex-hook-install <config.toml path> <hook abs path> <trust store path> [trust-dir ...]
+
+The optional trailing dirs are workspaces to mark trusted in this home's
+config ([projects."<dir>"].trust_level = "trusted"), so Codex doesn't re-ask
+its startup "trust this directory?" gate for a folder Spike launched in — the
+persisted-trust that our fresh per-tab CODEX_HOME would otherwise discard.
+
+What it does, idempotently and without ever mutating ~/.codex:
+
+  1. Ensures the [[hooks.PreToolUse]] / [[hooks.PostToolUse]] / [[hooks.Stop]]
+     blocks in the home's config.toml, each pointing `command` at the bundled
+     hook script. It MERGES — Codex writes its own [projects]/[tui.*] tables
+     into that file — by managing a single sentinel-delimited block; everything
+     outside the markers is preserved byte-for-byte.
+
+  2. HARVESTS any trusted_hash Codex persisted after a one-time TUI trust (our
+     hook is always group 0 / hook 0 for each event, so a Codex-written
+     [hooks.state."<config>:<snake>:0:0"] is unambiguously ours) and records it
+     in the trust store keyed by the hook's absolute path — portable across
+     homes because the hash is content-derived (event + matcher + command
+     path), not home/path-salted.
+
+  3. SEEDS trust by re-emitting those hashes as dotted [hooks.state."…"] tables
+     re-keyed to this home's config path, so the hook fires with no per-tab
+     prompt and no dangerous bypass flag.
+
+Fail-closed: no store (or a stale hash after a Codex version bump) → nothing is
+seeded → Codex silently skips the untrusted hook → zero events. Never a broken
+session; never --dangerously-bypass-hook-trust.
+
+Runs on macOS system Python 3.9 (no tomllib): the merge is a line-oriented
+sentinel/table filter, not a TOML round-trip, and we only emit the exact tables
+we own.
+"""
+import json
+import os
+import re
+import shlex
+import sys
+
+BEGIN = "# >>> spike-managed hooks (do not edit)"
+END = "# <<< spike-managed hooks"
+# Config table name (PascalCase) ↔ the snake form in the trust state key. The
+# matcher is part of the trust hash, so it must stay constant across the one-
+# time trust capture and every subsequent seed.
+EVENTS = [("PreToolUse", "pre_tool_use"), ("PostToolUse", "post_tool_use"), ("Stop", "stop")]
+SNAKES = [s for _e, s in EVENTS]
+MATCHER = ".*"
+
+OWNED_HDR = re.compile(r'^\s*\[hooks\.state\.("?)(.+?)\1\]\s*$')
+HASH_LINE = re.compile(r'^\s*trusted_hash\s*=\s*"([^"]+)"\s*$')
+
+
+def toml_str(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def command_line(hook_path):
+    """The `command` VALUE, shell-quoted.
+
+    Codex does not exec this path — it runs the string through a shell
+    (codex-rs/hooks/src/engine/command_runner.rs: `$SHELL -lc "<command>"`,
+    falling back to /bin/sh). So a bundle path containing a space — e.g.
+    ".../macos/Spike Shell.app/..." — gets word-split and the hook dies with
+    exit 127 before our adapter ever runs. shlex.quote is the whole fix.
+
+    Note this changes the trust hash (content-derived over event + matcher +
+    command), so an install location whose hash was captured pre-quoting
+    re-prompts once in the TUI, then re-harvests. Keep the trust store keyed by
+    the BARE path so that key stays stable across this change.
+    """
+    return shlex.quote(hook_path)
+
+
+def load_store(trust_store):
+    try:
+        with open(trust_store) as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _owned_key(key, config_path):
+    """The event snake for a [hooks.state] key at group 0 / hook 0, or None.
+
+    For THIS home we require an exact config-path match; for a sibling home the
+    path differs, so the caller passes config_path=None to match on the
+    :<snake>:0:0 suffix alone (the hash is content-derived, so a sibling's copy
+    is valid here — the caller has already checked the sibling uses our hook)."""
+    for snake in SNAKES:
+        suffix = ":%s:0:0" % snake
+        if config_path is None:
+            if key.endswith(suffix):
+                return snake
+        elif key == "%s%s" % (config_path, suffix):
+            return snake
+    return None
+
+
+def _harvest_from_siblings(config_path, hook_path, hashes):
+    """A trust granted in ONE tab must seed EVERY future tab. Each tab has its
+    own fresh home, so scan the other per-tab homes under codex-homes/ for a
+    Codex-persisted trusted_hash for our hook (group 0/hook 0) and adopt it.
+    Only trust a sibling that actually references our hook binary."""
+    changed = False
+    homes_root = os.path.dirname(os.path.dirname(config_path))
+    hook_ref = "command = %s" % toml_str(command_line(hook_path))
+    try:
+        names = os.listdir(homes_root)
+    except OSError:
+        return False
+    for name in names:
+        if all(hashes.get(s) for s in SNAKES):
+            break
+        sib = os.path.join(homes_root, name, "config.toml")
+        if sib == config_path:
+            continue
+        try:
+            with open(sib) as f:
+                sib_lines = f.read().splitlines()
+        except OSError:
+            continue
+        if hook_ref not in "\n".join(sib_lines):
+            continue
+        k = 0
+        while k < len(sib_lines):
+            m = OWNED_HDR.match(sib_lines[k])
+            snake = _owned_key(m.group(2), None) if m else None
+            if snake and not hashes.get(snake):
+                j = k + 1
+                while j < len(sib_lines) and not sib_lines[j].lstrip().startswith("["):
+                    hm = HASH_LINE.match(sib_lines[j])
+                    if hm:
+                        hashes[snake] = hm.group(1)
+                        changed = True
+                        break
+                    j += 1
+            k += 1
+    return changed
+
+
+def install(config_path, hook_path, trust_store, trust_dirs=None):
+    store = load_store(trust_store)
+    hashes = dict(store.get(hook_path) or {})
+
+    # Workspace-trust seeding: Codex re-asks its "do you trust this directory?"
+    # gate on every launch because Spike hands it a FRESH per-tab CODEX_HOME, so
+    # the [projects."<dir>"] trust it persists is discarded each time. We re-seed
+    # trust for the directory Spike launched in (and its git root) — the
+    # workspace the user chose to open, never an arbitrary path — using Codex's
+    # own config mechanism. Own our copy inside the managed block; drop any
+    # duplicate for the same dir so there's no double TOML header.
+    tdirs, seen = [], set()
+    for d in (trust_dirs or []):
+        if d and d not in seen:
+            seen.add(d)
+            tdirs.append(d)
+    owned_projects = {("[projects.%s]" % toml_str(d)) for d in tdirs}
+
+    try:
+        with open(config_path) as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        lines = []
+
+    keep, dropping, i, harvested = [], False, 0, False
+    while i < len(lines):
+        ln = lines[i]
+        if ln.strip() == BEGIN:
+            dropping = True
+            i += 1
+            continue
+        if ln.strip() == END:
+            dropping = False
+            i += 1
+            continue
+        if dropping:
+            i += 1
+            continue
+        if ln.strip() in owned_projects:
+            # A [projects."<our dir>"] table (Codex-written or a prior seed) —
+            # drop header + its keys; we re-emit it in the block below.
+            j = i + 1
+            while j < len(lines) and not lines[j].lstrip().startswith("["):
+                j += 1
+            i = j
+            continue
+        m = OWNED_HDR.match(ln)
+        snake = _owned_key(m.group(2), config_path) if m else None
+        if snake:
+            # A Codex-written trust table for one of our hooks in THIS home.
+            # Drop it (we re-emit our own copy below, so keeping it would
+            # duplicate the table header) after harvesting the hash it carries.
+            j = i + 1
+            while j < len(lines) and not lines[j].lstrip().startswith("["):
+                hm = HASH_LINE.match(lines[j])
+                if hm and not hashes.get(snake):
+                    hashes[snake] = hm.group(1)
+                    harvested = True
+                j += 1
+            i = j
+            continue
+        keep.append(ln)
+        i += 1
+    while keep and keep[-1].strip() == "":
+        keep.pop()
+
+    # Adopt a trust granted in any other tab (portable, content-derived hash).
+    if _harvest_from_siblings(config_path, hook_path, hashes):
+        harvested = True
+
+    if harvested:
+        store[hook_path] = {s: hashes[s] for s in SNAKES if hashes.get(s)}
+        try:
+            os.makedirs(os.path.dirname(trust_store), exist_ok=True)
+            tmp = trust_store + ".spike-tmp"
+            with open(tmp, "w") as f:
+                json.dump(store, f, indent=2)
+            os.replace(tmp, trust_store)
+        except OSError:
+            pass
+
+    block = [BEGIN]
+    for event, _snake in EVENTS:
+        block.append("[[hooks.%s]]" % event)
+        block.append("matcher = %s" % toml_str(MATCHER))
+        block.append("[[hooks.%s.hooks]]" % event)
+        block.append('type = "command"')
+        block.append("command = %s" % toml_str(command_line(hook_path)))
+    for _event, snake in EVENTS:
+        h = hashes.get(snake)
+        if isinstance(h, str) and h:
+            block.append("[hooks.state.%s]" % toml_str("%s:%s:0:0" % (config_path, snake)))
+            block.append("trusted_hash = %s" % toml_str(h))
+    for d in tdirs:
+        block.append("[projects.%s]" % toml_str(d))
+        block.append('trust_level = "trusted"')
+    block.append(END)
+
+    out = "\n".join(keep + ([""] if keep else []) + block) + "\n"
+    tmp = config_path + ".spike-tmp"
+    with open(tmp, "w") as f:
+        f.write(out)
+    os.replace(tmp, config_path)
+
+    seeded = [s for s in SNAKES if isinstance(hashes.get(s), str) and hashes.get(s)]
+    _log(config_path, hook_path, seeded, harvested)
+    return seeded, harvested
+
+
+def _log(config_path, hook_path, seeded, harvested):
+    # Best-effort diagnostic so "zero Codex events" reads as "not trusted yet →
+    # trust the hook once in the TUI", not a silent mystery.
+    try:
+        logdir = os.path.join(os.path.expanduser("~"), ".spike", "logs")
+        os.makedirs(logdir, exist_ok=True)
+        with open(os.path.join(logdir, "codex-hook-install.log"), "a") as f:
+            f.write(json.dumps({
+                "home": os.path.dirname(config_path),
+                "hook": hook_path,
+                "seeded_events": seeded,
+                "harvested": harvested,
+                "trusted": bool(seeded),
+            }) + "\n")
+    except OSError:
+        pass
+
+
+def main(argv):
+    if len(argv) < 4:
+        return 0  # misuse → no-op, never disturb the Codex launch
+    # argv[4:] are workspace directories to trust (the launched cwd + its git
+    # root). Optional, so the 3-arg hook-only call still works unchanged.
+    try:
+        install(argv[1], argv[2], argv[3], argv[4:])
+    except Exception:
+        pass  # silence on failure is absolute — the shim exec's Codex next
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

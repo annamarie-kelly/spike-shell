@@ -1,0 +1,24 @@
+{
+  "fill": {
+    "automatic-gradient": "extended-srgb:0.1216,0.1216,0.1216,1.0"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "glyph.png",
+          "name": "Spike",
+          "fill": {
+            "solid": "extended-srgb:0.9020,0.9020,0.9020,1.0"
+          }
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}

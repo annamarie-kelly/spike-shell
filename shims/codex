@@ -1,0 +1,107 @@
+#!/bin/sh
+# codex — Spike's wrapper for the OpenAI Codex CLI. Parallel to shims/claude
+# (see that file for the PATH-prepend mechanism). The one job: deliver Spike's
+# system prompt (which teaches the session about the preview panel + workspace
+# context) and hand off to the real codex with every argument intact.
+#
+# Codex's contract differs from Claude's: there is no --append-system-prompt
+# flag. Codex reads AGENTS.md from $CODEX_HOME and from a tree walk under the
+# git root. We deliver Spike's prompt by writing it to $SPIKE_CODEX_HOME/AGENTS.md
+# and pointing CODEX_HOME at that dir.
+#
+# Why a per-tab dir instead of $HOME/.codex/: $CODEX_HOME is the FULL Codex
+# state directory (auth.json, sessions, sqlite, memories). Stomping on it would
+# (a) strand the user's auth, and (b) race when two Spike tabs in different
+# workspaces have different workspace prompts. The Rust spawn site sets a
+# per-tab path in $SPIKE_CODEX_HOME (e.g. ~/.spike/codex-homes/<spawn-id>/);
+# this shim sets it up on first invocation and symlinks auth through.
+#
+# The prompt text is supplied by the server via $SPIKE_SYSTEM_PROMPT, same as
+# shims/claude — single source of truth lives in src-tauri/src/pty.rs. Unset or
+# empty → run the real codex untouched (no AGENTS.md write).
+
+# Find the real codex on PATH, skipping this wrapper's own directory so we
+# don't exec ourselves.
+self=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+real=
+IFS=:
+for d in $PATH; do
+  [ "$d" = "$self" ] && continue
+  if [ -x "$d/codex" ]; then real=$d/codex; break; fi
+done
+unset IFS
+[ -z "$real" ] && real=/opt/homebrew/bin/codex
+
+# Where the Rust spawn site told us to root Codex's state. If unset, run codex
+# vanilla — same graceful-degradation rule as shims/claude (an unset prompt
+# falls through).
+if [ -z "$SPIKE_CODEX_HOME" ]; then
+  exec "$real" "$@"
+fi
+
+mkdir -p "$SPIKE_CODEX_HOME" 2>/dev/null
+
+# Symlink the user's real auth.json into our per-tab CODEX_HOME so Codex finds
+# its credentials. We DON'T copy — a fresh login (or token refresh) writes to
+# ~/.codex/auth.json; a copy would go stale. If the user hasn't logged in yet,
+# print a hint instead of letting them hit a 401 wall mid-session.
+if [ ! -e "$SPIKE_CODEX_HOME/auth.json" ]; then
+  if [ -f "$HOME/.codex/auth.json" ]; then
+    ln -sf "$HOME/.codex/auth.json" "$SPIKE_CODEX_HOME/auth.json" 2>/dev/null
+  else
+    printf '\033[33mspike: no Codex auth found at ~/.codex/auth.json.\033[0m\n'
+    printf '\033[33mRun `codex login` (in any terminal) to sign in, then start a new Codex tab.\033[0m\n'
+    exit 1
+  fi
+fi
+
+# Write Spike's composed system prompt to AGENTS.md. Codex's session
+# initialization (codex-rs/core/src/session/mod.rs → load_project_instructions)
+# reads $CODEX_HOME/AGENTS.md on every spawn, so we just overwrite each time.
+# Verified empirically (the marmalade probe) and in source (no mode gate
+# between TUI and exec).
+if [ -n "$SPIKE_SYSTEM_PROMPT" ]; then
+  printf '%s\n' "$SPIKE_SYSTEM_PROMPT" > "$SPIKE_CODEX_HOME/AGENTS.md"
+fi
+
+# Register Spike's agent-event hook into this per-tab CODEX_HOME and seed its
+# trust so it fires with no per-tab prompt and no dangerous bypass flag. Codex
+# spawns codex-agent-event-hook for PreToolUse/PostToolUse/Stop; the adapter
+# translates each to a canonical broker event (see docs/plans/
+# codex-agent-event-adapter.md and the hook-trust spike for the mechanics).
+#
+# We MERGE into config.toml (Codex writes its own [projects]/[tui.*] tables
+# there) by managing a single sentinel-delimited block; everything outside the
+# markers is preserved untouched. Idempotent: the block is rebuilt each spawn.
+#
+# Trust is content-derived (event + matcher + command path), constant per
+# install location, so one trust re-keys to every per-tab home — exactly like
+# auth.json is symlinked per home. The user trusts the hook ONCE (Codex's TUI
+# "Hooks need review" modal on the first Codex tab); the seeder auto-harvests
+# the hash Codex persists and, from the next spawn on, seeds it into every home
+# with no further prompt. No store (or a stale hash after a Codex upgrade) →
+# the hook is left untrusted → Codex silently skips it → zero events. Never a
+# broken session; never a bypass flag.
+hook="$self/codex-agent-event-hook"
+installer="$self/codex-hook-install"
+trust_store="$HOME/.spike/codex-hook-trust.json"
+config="$SPIKE_CODEX_HOME/config.toml"
+# Trust the workspace Spike launched Codex in so its startup "do you trust this
+# directory?" gate stops re-asking every open. This is the directory the user
+# chose to open in Spike (cwd) and its git root — never an arbitrary path — and
+# it's re-seeded here because our fresh per-tab CODEX_HOME discards the trust
+# Codex would otherwise persist. Config-based (Codex's own [projects] mechanism),
+# not a keystroke auto-answer; a folder we don't seed still hits the gate.
+# NOTE: don't touch the positional params ($@) — they are Codex's own args for
+# the exec below. Pass the trust dirs as explicit, separately-quoted arguments
+# so paths with spaces survive.
+gitroot=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)
+if [ -x "$hook" ] && [ -f "$installer" ]; then
+  if [ -n "$gitroot" ] && [ "$gitroot" != "$PWD" ]; then
+    python3 "$installer" "$config" "$hook" "$trust_store" "$PWD" "$gitroot" 2>/dev/null || true
+  else
+    python3 "$installer" "$config" "$hook" "$trust_store" "$PWD" 2>/dev/null || true
+  fi
+fi
+
+CODEX_HOME="$SPIKE_CODEX_HOME" exec "$real" "$@"
